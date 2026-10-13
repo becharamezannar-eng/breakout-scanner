@@ -1,6 +1,7 @@
-Score,Category,Pattern,Status,BreakoutDate,Close,Resistance,PctAboveRes,VolX,RangeATR,UpperWickPct,BaseLen,BaseDepthPct,Touches,ResTests120d,HigherLows,VolRisingInBase,RangeContraction,BaseLow,ATR,Flags,Ticker,Indexes
-66.2,Continuation,Bull flag,Confirmed (held next day),2026-10-12,80.86,78.44,3.09,1.55,1.99,21.1,5,4.5,4,1,True,False,True,74.93,3.06,volume < 2x,VEON,Nasdaq Composite
-59.2,Other,Flat-top breakout,Fresh - confirm hold next session,2026-10-13,9.71,9.68,0.26,2.19,2.23,16.2,14,6.7,2,1,True,True,True,9.04,0.17,no clear trend/bottom context,ERIC,Nasdaq Composite
-56.2,Other,Ascending triangle,Confirmed (held next day),2026-10-12,32.99,31.07,6.18,1.81,2.32,13.0,12,6.4,3,0,True,False,True,29.07,0.83,no clear trend/bottom context; volume < 2x,FIZZ,Nasdaq Composite
-54.2,Bottoming,Flat base after drop -> breakout,Fresh - confirm hold next session,2026-10-13,117.08,111.51,5.0,1.67,2.0,2.7,3,4.9,3,0,False,False,False,106.06,3.35,volume < 2x,TVK.TO,S&P/TSX Composite
-51.7,Other,Flat-top breakout,Fresh - confirm hold next session,2026-10-13,6.78,6.51,4.23,2.24,1.72,4.5,4,5.6,2,3,False,False,True,6.14,0.26,no clear trend/bottom context,GFR,NYSE-listed (R2000 proxy)
+Score,Category,Pattern,Status,BreakoutDate,Close,Resistance,PctAboveRes,VolX,RangeATR,UpperWickPct,BaseLen,BaseDepthPct,Touches,ResTests120d,HigherLows,VolRisingInBase,RangeContraction,BaseLow,ATR,BaseStart,Flags,Ticker,Indexes
+66.2,Continuation,Bull flag,Confirmed (held next day),2026-10-12,80.86,78.44,3.09,1.55,1.99,21.1,5,4.5,4,1,True,False,True,74.93,3.06,2026-10-05,volume < 2x,VEON,Nasdaq Composite
+59.2,Other,Flat-top breakout,Fresh - confirm hold next session,2026-10-13,9.71,9.68,0.26,2.19,2.23,16.2,14,6.7,2,1,True,True,True,9.04,0.17,2026-09-23,no clear trend/bottom context,ERIC,Nasdaq Composite
+56.2,Other,Ascending triangle,Confirmed (held next day),2026-10-12,32.99,31.07,6.18,1.81,2.32,13.0,12,6.4,3,0,True,False,True,29.07,0.83,2026-09-24,no clear trend/bottom context; volume < 2x,FIZZ,Nasdaq Composite
+54.2,Bottoming,Flat base after drop -> breakout,Fresh - confirm hold next session,2026-10-13,117.08,111.51,5.0,1.67,2.0,2.7,3,4.9,3,0,False,False,False,106.06,3.35,2026-10-07,volume < 2x,TVK.TO,S&P/TSX Composite
+51.7,Other,Flat-top breakout,Fresh - confirm hold next session,2026-10-13,6.78,6.51,4.23,2.24,1.7,3.4,4,5.6,2,3,False,False,True,6.14,0.26,2026-10-07,no clear trend/bottom context,GFR,NYSE-listed (R2000 proxy)
+51.1,Other,Ascending triangle,Fresh - confirm hold next session,2026-10-13,26.28,25.75,2.06,1.51,1.25,11.8,40,14.6,5,3,True,False,True,21.99,0.75,2026-08-14,no clear trend/bottom context; volume < 2x,NFI.TO,S&P/TSX Composite
