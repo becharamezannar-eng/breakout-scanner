@@ -506,6 +506,7 @@ def check_breakout(d, b, off):
         Touches=touches, ResTests120d=tests, HigherLows=bool(higher_lows),
         VolRisingInBase=bool(vol_rising), RangeContraction=bool(contraction),
         BaseLow=round(low, 2), ATR=round(atr, 2),
+        BaseStart=pd.Timestamp(d.index[s]).date().isoformat(),
         Flags="; ".join(flags), _b=b, _s=s,
     )
 
@@ -521,38 +522,191 @@ def analyze(d):
     return best
 
 # --------------------------------------------------------------------------
+# Signal tracker: follows every setup from day to day and gives an action
+# --------------------------------------------------------------------------
+TRADE = dict(
+    buy_zone=0.04,        # buy only within 4% above resistance (same as the "extended" cutoff)
+    extended=0.04,        # > 4% above resistance after confirmation = don't chase
+    extended_days=10,     # give up on an extended name that never pulls back
+    stop_atr=1.0,         # stop = max(base low, resistance - 1 ATR), at least 1.5% under resistance
+    min_rr=2.0,           # target is at least 2x the risk
+    trail_atr=2.0,        # trailing stop after the target: highest close - 2 ATR
+    time_stop_days=15,    # sell if no follow-through after 15 sessions
+    time_stop_gain=0.02,
+)
+
+TRACK_COLS = ["Ticker", "Indexes", "Category", "Pattern", "Score", "BreakoutDate", "BaseStart",
+              "Resistance", "BaseLow", "ATR", "VolX", "Flags", "Status", "StatusSince", "Stop", "Target",
+              "EntryDate", "EntryPrice", "LastClose", "HighClose", "PnLPct", "LastDate", "Note", "Closed"]
+ACTIVE = {"WATCH", "BUY", "EXTENDED", "HOLD", "TAKE PROFIT", "TRAIL"}
+
+STATUS_INFO = {
+    "BUY":         ("Buy", "#16794a", "Breakout confirmed: it held the day after. Entry plan below."),
+    "WATCH":       ("Watch", "#1d5fbf", "Fresh breakout today. Needs to hold above the breakout level tomorrow before it becomes a Buy."),
+    "EXTENDED":    ("Don't chase", "#a15c00", "Breakout held but price ran too far above the breakout level. Wait for a pullback."),
+    "HOLD":        ("Hold", "#3d4a5c", "You own it (if you took the Buy). Keep the stop in place."),
+    "TAKE PROFIT": ("Take profit", "#7a3db8", "Target hit. Sell part, protect the rest."),
+    "TRAIL":       ("Hold - trailing", "#3d4a5c", "Holding the remainder with a stop that rises with the price."),
+    "SELL":        ("Sell", "#b42318", "Exit the position."),
+    "DROP":        ("Drop", "#6b6b6b", "Setup failed before entry. Remove from watchlist."),
+}
+
+
+def _dates(d):
+    return np.array([pd.Timestamp(i).date() for i in d.index])
+
+
+def _levels(R, base_low, atr, entry):
+    stop = max(base_low, R - TRADE["stop_atr"] * atr)
+    stop = min(stop, R * 0.985)
+    risk = max(entry - stop, entry * 0.005)
+    target = max(R + (R - base_low), entry + TRADE["min_rr"] * risk)
+    return round(stop, 2), round(target, 2)
+
+
+def _set(row, status, date, note):
+    row["Status"], row["StatusSince"], row["Note"] = status, date, note
+    if status in ("SELL", "DROP"):
+        row["Closed"] = True
+
+
+def _start_buy(row, date, close, note):
+    row["EntryDate"], row["EntryPrice"] = date, round(close, 2)
+    row["Stop"], row["Target"] = _levels(row["Resistance"], row["BaseLow"], row["ATR"], close)
+    row["HighClose"] = round(close, 2)
+    _set(row, "BUY", date, note)
+
+
+def step_row(row, date, o, h, l, c, n_held):
+    """Advance one tracked setup by one daily candle."""
+    R, st = row["Resistance"], row["Status"]
+    row["LastClose"], row["LastDate"] = round(c, 2), date
+    if row.get("EntryPrice") and np.isfinite(row["EntryPrice"]):
+        row["HighClose"] = round(max(row.get("HighClose") or c, c), 2)
+        row["PnLPct"] = round((c / row["EntryPrice"] - 1) * 100, 2)
+
+    if st == "WATCH":
+        if c < R or l < R * (1 - CFG["hold_tol"]):
+            _set(row, "DROP", date, f"Failed to hold the breakout: closed {c:.2f}, low {l:.2f} vs level {R:.2f}")
+        elif c > R * (1 + TRADE["extended"]):
+            _set(row, "EXTENDED", date, f"Held, but closed {100 * (c / R - 1):.1f}% above the breakout level")
+        else:
+            _start_buy(row, date, c, "Held above the breakout level the next day")
+    elif st == "EXTENDED":
+        if c < R * (1 - CFG["hold_tol"]):
+            _set(row, "DROP", date, "Fell back below the breakout level")
+        elif c <= R * (1 + TRADE["buy_zone"]) and l >= R * (1 - CFG["hold_tol"]):
+            _start_buy(row, date, c, "Pulled back to the breakout level and held")
+        elif n_held >= TRADE["extended_days"]:
+            _set(row, "DROP", date, "Never pulled back - opportunity missed")
+    elif st in ("BUY", "HOLD"):
+        if c < row["Stop"]:
+            _set(row, "SELL", date, f"Closed below the stop ({row['Stop']:.2f})")
+        elif h >= row["Target"]:
+            row["Stop"] = round(max(row["Stop"], row["EntryPrice"]), 2)
+            _set(row, "TAKE PROFIT", date, f"Hit target {row['Target']:.2f}")
+        elif n_held >= TRADE["time_stop_days"] and c < row["EntryPrice"] * (1 + TRADE["time_stop_gain"]):
+            _set(row, "SELL", date, f"Time stop: no follow-through after {n_held} sessions")
+        elif st == "BUY":
+            _set(row, "HOLD", date, "Breakout working - stop unchanged")
+    elif st in ("TAKE PROFIT", "TRAIL"):
+        trail = row["HighClose"] - TRADE["trail_atr"] * row["ATR"]
+        row["Stop"] = round(max(row["Stop"], trail), 2)
+        if c < row["Stop"]:
+            _set(row, "SELL", date, f"Trailing stop hit ({row['Stop']:.2f})")
+        elif st == "TAKE PROFIT":
+            _set(row, "TRAIL", date, "Riding the rest with a trailing stop")
+
+
+def load_tracker(path):
+    if os.path.exists(path):
+        tr = pd.read_csv(path, dtype={"Ticker": str})
+        for col in TRACK_COLS:
+            if col not in tr.columns:
+                tr[col] = np.nan
+        tr["Closed"] = tr["Closed"].fillna(False).astype(bool)
+        return tr[TRACK_COLS].to_dict("records")
+    return []
+
+
+def update_tracker(rows, res, data, asof):
+    """Advance open setups with every new candle, then add today's new setups."""
+    for row in rows:
+        if row["Closed"] or row["Ticker"] not in data:
+            continue
+        d = data[row["Ticker"]]
+        dts = _dates(d)
+        last = pd.Timestamp(row["LastDate"]).date()
+        for i in np.where(dts > last)[0]:
+            if row["Closed"]:
+                break
+            since = pd.Timestamp(row["EntryDate"] if row["Status"] not in ("WATCH", "EXTENDED") and isinstance(row["EntryDate"], str)
+                                 else row["StatusSince"]).date()
+            n_held = int(((dts > since) & (dts <= dts[i])).sum())
+            step_row(row, dts[i].isoformat(), *d[["Open", "High", "Low", "Close"]].iloc[i].tolist(), n_held)
+
+    open_now = {r["Ticker"] for r in rows if not r["Closed"]}
+    for _, r in res.iterrows():
+        if r["Ticker"] in open_now:
+            continue
+        row = {k: np.nan for k in TRACK_COLS}
+        row.update({k: r[k] for k in ["Ticker", "Indexes", "Category", "Pattern", "Score", "BreakoutDate",
+                                      "BaseStart", "Resistance", "BaseLow", "ATR", "VolX", "Flags"]})
+        row.update(LastClose=r["Close"], LastDate=asof, Closed=False)
+        if r["Status"].startswith("Fresh"):
+            _set(row, "WATCH", asof, f"Broke out on {r['VolX']}x volume")
+        elif r["Close"] > r["Resistance"] * (1 + TRADE["extended"]):
+            _set(row, "EXTENDED", asof, f"Breakout held but closed {r['PctAboveRes']}% above the level")
+        else:
+            _start_buy(row, asof, r["Close"], "Broke out and held the next day")
+        rows.append(row)
+    return rows
+
+# --------------------------------------------------------------------------
 # Report
 # --------------------------------------------------------------------------
-def chart_png(t, d, r, bars=120):
+def chart_png(t, d, row, bars=120):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    n0 = max(0, len(d) - bars)
-    w = d.iloc[n0:]
+    w = d.iloc[-bars:]
     x = np.arange(len(w))
-    fig, (ax, axv) = plt.subplots(2, 1, figsize=(8, 4.6), sharex=True,
+    dts = _dates(w)
+    fig, (ax, axv) = plt.subplots(2, 1, figsize=(7, 4.2), sharex=True,
                                   gridspec_kw=dict(height_ratios=[3, 1], hspace=0.05))
-    up = w["Close"] >= w["Open"]
+    up = (w["Close"] >= w["Open"]).to_numpy()
     col = np.where(up, "#1a9e5f", "#d1453b")
     ax.vlines(x, w["Low"], w["High"], color=col, lw=0.8)
     ax.bar(x, (w["Close"] - w["Open"]).abs().clip(lower=1e-9), bottom=w[["Open", "Close"]].min(axis=1),
            color=col, width=0.7)
-    ax.plot(x, w["SMA50"], color="#4a6fd1", lw=1, label="SMA50")
-    ax.plot(x, w["SMA200"], color="#999", lw=1, label="SMA200")
-    ax.axhline(r["Resistance"], color="#e08a00", lw=1.2, ls="--", label="Resistance")
-    s, b = r["_s"] - n0, r["_b"] - n0
-    ax.axvspan(s - 0.5, b - 0.5, color="#e08a00", alpha=0.12)
-    ax.set_title(f"{t}  -  {r['Pattern']}  ({r['Status']})", fontsize=10)
-    ax.legend(fontsize=7, loc="upper left")
+    ax.plot(x, w["SMA50"], color="#4a6fd1", lw=1, label="50-day avg")
+    ax.plot(x, w["SMA200"], color="#999", lw=1, label="200-day avg")
+    ax.axhline(row["Resistance"], color="#e08a00", lw=1.2, ls="--", label=f"Breakout level {row['Resistance']:.2f}")
+    if pd.notna(row.get("Stop")):
+        ax.axhline(row["Stop"], color="#b42318", lw=1, ls=":", label=f"Stop {row['Stop']:.2f}")
+    if pd.notna(row.get("Target")):
+        ax.axhline(row["Target"], color="#16794a", lw=1, ls=":", label=f"Target {row['Target']:.2f}")
+    try:
+        bs, bo = pd.Timestamp(row["BaseStart"]).date(), pd.Timestamp(row["BreakoutDate"]).date()
+        i0 = int(np.searchsorted(dts, bs)); i1 = int(np.searchsorted(dts, bo))
+        ax.axvspan(i0 - 0.5, i1 - 0.5, color="#e08a00", alpha=0.12)
+        ax.annotate("breakout", (i1, w["High"].iloc[min(i1, len(w) - 1)]), xytext=(0, 8),
+                    textcoords="offset points", ha="center", fontsize=7, color="#a15c00")
+    except Exception:
+        pass
+    ax.legend(fontsize=7, loc="upper left", frameon=False)
     axv.bar(x, w["Volume"], color=col, width=0.7)
     axv.plot(x, w["AvgVol50"], color="#333", lw=1)
     axv.set_yticks([])
     step = max(1, len(w) // 6)
     axv.set_xticks(x[::step])
-    axv.set_xticklabels([pd.Timestamp(i).strftime("%b %d") for i in w.index[::step]], fontsize=7)
+    axv.set_xticklabels([dd.strftime("%b %d") for dd in dts[::step]], fontsize=7)
     ax.tick_params(labelsize=7)
+    for a_ in (ax, axv):
+        for sp in ("top", "right"):
+            a_.spines[sp].set_visible(False)
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=90, bbox_inches="tight")
+    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight", facecolor="white")
     plt.close(fig)
     return base64.b64encode(buf.getvalue()).decode()
 
@@ -565,49 +719,168 @@ def market_context(data):
             continue
         d = data[t]
         c, s50, s200 = d["Close"].iloc[-1], d["SMA50"].iloc[-1], d["SMA200"].iloc[-1]
+        chg = (c / d["Close"].iloc[-2] - 1) * 100
         trend = "Uptrend" if c > s50 > s200 else ("Downtrend" if c < s50 < s200 else "Mixed")
-        rows.append((name, t, round(c, 2), trend))
+        rows.append((name, round(c, 2), round(chg, 2), trend))
     return rows
 
 
-def write_html(path, res, data, ctx, n_scanned, n_charts):
-    today = dt.date.today().isoformat()
-    cols = ["Ticker", "Indexes", "Score", "Category", "Pattern", "Status", "BreakoutDate", "Close",
-            "Resistance", "PctAboveRes", "VolX", "RangeATR", "UpperWickPct", "BaseLen",
-            "BaseDepthPct", "Touches", "ResTests120d", "HigherLows", "VolRisingInBase",
-            "BaseLow", "Flags"]
-    table = res[cols].to_html(index=False, classes="t", border=0) if len(res) else "<p>No setups passed every rule.</p>"
-    ctx_html = "".join(f"<li><b>{n}</b> ({t}) {c} - {tr}</li>" for n, t, c, tr in ctx)
-    charts = []
-    for _, r in res.head(n_charts).iterrows():
+def _f(x, nd=2):
+    return "-" if x is None or (isinstance(x, float) and not np.isfinite(x)) else f"{x:,.{nd}f}"
+
+
+def _pct(a, b):
+    return f"{(a / b - 1) * 100:+.1f}%"
+
+
+def instruction(r):
+    st, R = r["Status"], r["Resistance"]
+    if st == "BUY":
+        hi = R * (1 + TRADE["buy_zone"])
+        return (f"Buy at tomorrow's open if it opens between <b>{_f(R)}</b> and <b>{_f(hi)}</b>. "
+                f"Skip if it gaps above {_f(hi)} or opens below {_f(R)}. "
+                f"Stop <b>{_f(r['Stop'])}</b> ({_pct(r['Stop'], r['EntryPrice'])}), "
+                f"target <b>{_f(r['Target'])}</b> ({_pct(r['Target'], r['EntryPrice'])}).")
+    if st == "WATCH":
+        return (f"Broke above <b>{_f(R)}</b> today on {r['VolX']}x normal volume. Don't buy yet: tomorrow it must "
+                f"close above {_f(R)} without trading below {_f(R * (1 - CFG['hold_tol']))}. If it does, it becomes a Buy.")
+    if st == "EXTENDED":
+        return (f"The breakout held, but price is {_pct(r['LastClose'], R)} above the breakout level. "
+                f"Don't chase it. Buy only if it pulls back to <b>{_f(R)}-{_f(R * (1 + TRADE['buy_zone']))}</b> and holds.")
+    if st == "HOLD":
+        return (f"In the trade since {r['EntryDate']} at {_f(r['EntryPrice'])} (<b>{r['PnLPct']:+.1f}%</b>). "
+                f"Keep the stop at <b>{_f(r['Stop'])}</b>; target <b>{_f(r['Target'])}</b>.")
+    if st == "TAKE PROFIT":
+        return (f"Hit the {_f(r['Target'])} target (<b>{r['PnLPct']:+.1f}%</b>). Sell about half. "
+                f"Move the stop on the rest to <b>{_f(r['Stop'])}</b> (your entry), so it can't turn into a loss.")
+    if st == "TRAIL":
+        return (f"Holding the remainder, <b>{r['PnLPct']:+.1f}%</b> since {r['EntryDate']}. "
+                f"Trailing stop now <b>{_f(r['Stop'])}</b>; it rises as the price does.")
+    if st == "SELL":
+        res = f" Result <b>{r['PnLPct']:+.1f}%</b> from {_f(r['EntryPrice'])}." if pd.notna(r.get("PnLPct")) else ""
+        return f"Sell at tomorrow's open. {r['Note']}.{res}"
+    if st == "DROP":
+        return f"Take it off the watchlist. {r['Note']}."
+    return r.get("Note", "")
+
+
+def card_html(r, chart=None, compact=False):
+    label, color, _ = STATUS_INFO.get(r["Status"], (r["Status"], "#555", ""))
+    new = r["StatusSince"] == r["LastDate"] and r["Status"] not in ("HOLD", "TRAIL")
+    flags = [f for f in str(r.get("Flags") or "").split("; ") if f and f != "nan"]
+    facts = [("Breakout level", _f(r["Resistance"])), ("Stop", _f(r.get("Stop"))),
+             ("Target", _f(r.get("Target"))), ("Volume", f"{r['VolX']}x avg"),
+             ("Breakout", str(r["BreakoutDate"])), ("Score", _f(r["Score"], 0))]
+    facts_html = "".join(f"<div><span>{k}</span><b>{v}</b></div>" for k, v in facts)
+    flag_html = "".join(f'<span class="flag">{f}</span>' for f in flags)
+    chart_html = (f'<details><summary>Chart</summary><img alt="{r["Ticker"]} chart" '
+                  f'src="data:image/png;base64,{chart}"/></details>') if chart else ""
+    return f"""<article class="card" style="--c:{color}">
+  <header><div><h3>{r['Ticker']}</h3><p class="sub">{r['Pattern']} &middot; {r['Indexes']}</p></div>
+  <div class="right"><span class="badge">{label}{' &middot; new' if new else ''}</span><p class="px">{_f(r['LastClose'])}</p></div></header>
+  <p class="do">{instruction(r)}</p>
+  {'' if compact else f'<div class="facts">{facts_html}</div>'}
+  {flag_html and f'<div class="flags">{flag_html}</div>'}
+  {chart_html}
+</article>"""
+
+
+def write_html(path, asof, rows, res, data, ctx, n_scanned):
+    asof_txt = pd.Timestamp(asof).strftime("%a %b %d, %Y")
+    act = [r for r in rows if not r["Closed"] or r["StatusSince"] == asof]
+    order = {"SELL": 0, "TAKE PROFIT": 1, "BUY": 2, "WATCH": 3, "EXTENDED": 4, "HOLD": 5, "TRAIL": 6, "DROP": 7}
+    act.sort(key=lambda r: (order.get(r["Status"], 9), -float(r["Score"] or 0)))
+
+    def charts_for(r):
         try:
-            png = chart_png(r["Ticker"], data[r["Ticker"]], r)
-            charts.append(f'<figure><img src="data:image/png;base64,{png}"/>'
-                          f'<figcaption>{r["Ticker"]}: vol {r["VolX"]}x, base {r["BaseLen"]} candles / '
-                          f'{r["BaseDepthPct"]}% deep, resistance {r["Resistance"]}, base low {r["BaseLow"]}'
-                          f'{" - " + r["Flags"] if r["Flags"] else ""}</figcaption></figure>')
-        except Exception as e:
-            charts.append(f"<p>{r['Ticker']}: chart failed ({e})</p>")
-    html = f"""<!doctype html><html><head><meta charset="utf-8">
+            return chart_png(r["Ticker"], data[r["Ticker"]], r) if r["Ticker"] in data else None
+        except Exception:
+            return None
+
+    do_now = [r for r in act if r["Status"] in ("BUY", "SELL", "TAKE PROFIT")
+              or (r["Status"] == "DROP" and r["StatusSince"] == asof)]
+    watch = [r for r in act if r["Status"] in ("WATCH", "EXTENDED")]
+    holding = [r for r in act if r["Status"] in ("HOLD", "TRAIL")]
+    cutoff = (pd.Timestamp(asof) - pd.Timedelta(days=21)).date().isoformat()
+    closed = [r for r in rows if r["Closed"] and r["StatusSince"] < asof and r["StatusSince"] >= cutoff]
+    closed.sort(key=lambda r: r["StatusSince"], reverse=True)
+
+    counts = {}
+    for r in act:
+        counts[r["Status"]] = counts.get(r["Status"], 0) + 1
+    chips = "".join(f'<span class="chip" style="--c:{STATUS_INFO[s][1]}">{counts[s]} {STATUS_INFO[s][0]}</span>'
+                    for s in order if s in counts) or '<span class="chip">Nothing active</span>'
+    mkt = "".join(f'<div class="mk"><span>{n}</span><b>{_f(c)}</b><em class="{"up" if ch >= 0 else "dn"}">{ch:+.2f}%</em>'
+                  f'<small class="{tr.lower()}">{tr}</small></div>' for n, c, ch, tr in ctx)
+
+    def section(title, sub, items, compact=False, empty="None today."):
+        body = "".join(card_html(r, charts_for(r), compact) for r in items) if items else f'<p class="empty">{empty}</p>'
+        return f'<section><h2>{title}</h2><p class="hint">{sub}</p>{body}</section>'
+
+    def pnl_cell(r):
+        v = r.get("PnLPct")
+        if r["Status"] == "DROP" or v is None or pd.isna(v):
+            return "<td>-</td>"
+        return f'<td class="{"up" if v >= 0 else "dn"}">{v:+.1f}%</td>'
+
+    closed_html = "".join(
+        f'<tr><td><b>{r["Ticker"]}</b></td><td>{STATUS_INFO[r["Status"]][0]}</td><td>{r["StatusSince"]}</td>'
+        f'{pnl_cell(r)}<td>{r["Note"]}</td></tr>' for r in closed)
+    closed_sec = (f'<section><h2>Closed in the last 3 weeks</h2><div class="wrap"><table><tr><th>Ticker</th><th>Result</th>'
+                  f'<th>Date</th><th>P&amp;L</th><th>Why</th></tr>{closed_html}</table></div></section>') if closed else ""
+
+    cols = ["Ticker", "Score", "Category", "Pattern", "Status", "Close", "Resistance", "PctAboveRes", "VolX",
+            "RangeATR", "UpperWickPct", "BaseLen", "BaseDepthPct", "Touches", "ResTests120d", "HigherLows",
+            "VolRisingInBase", "Flags"]
+    raw_tbl = res[cols].to_html(index=False, border=0) if len(res) else "<p>No new setups today.</p>"
+    glossary = "".join(f'<li><span class="chip" style="--c:{c}">{lab}</span> {txt}</li>'
+                       for lab, c, txt in STATUS_INFO.values())
+
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Breakout Scan {today}</title>
+<title>Breakout Scan {asof}</title>
 <style>
-body{{font-family:-apple-system,Segoe UI,Roboto,sans-serif;margin:16px;color:#1d1d1f;background:#fff}}
-h1{{font-size:20px}} .t{{border-collapse:collapse;font-size:12px;width:100%}}
-.t th,.t td{{padding:4px 6px;border-bottom:1px solid #e5e5e5;text-align:left;white-space:nowrap}}
-.t th{{background:#f4f4f6;position:sticky;top:0}} .wrap{{overflow-x:auto}}
-figure{{margin:16px 0}} img{{max-width:100%}} figcaption{{font-size:12px;color:#555}}
-.note{{font-size:12px;color:#666}}
-</style></head><body>
-<h1>Breakout Scan - {today}</h1>
-<p class="note">{n_scanned} tickers scanned, {len(res)} passed every rule. Ranked by score
-(bottoming breakouts weighted highest). "Fresh" = breakout on the last candle, still needs to hold;
-"Confirmed" = broke out the session before and held. Technical screen only - not investment advice.</p>
-<h3>Market context</h3><ul>{ctx_html}</ul>
-<h3>Setups</h3><div class="wrap">{table}</div>
-<h3>Charts (top {min(n_charts, len(res))})</h3>{''.join(charts)}
-<h3>Scan diagnostics</h3><ul class="note">{''.join(f"<li>{x}</li>" for x in DIAG)}</ul>
-</body></html>"""
+:root{{--bg:#f6f6f4;--card:#fff;--ink:#1c1c1e;--muted:#6b6b70;--line:#e6e6e3;--up:#16794a;--dn:#b42318}}
+@media (prefers-color-scheme:dark){{:root{{--bg:#151517;--card:#1f1f22;--ink:#ececee;--muted:#9a9aa0;--line:#2e2e33;--up:#4cc38a;--dn:#ff6b5e}}}}
+*{{box-sizing:border-box}} body{{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,"Segoe UI",Roboto,sans-serif}}
+main{{max-width:760px;margin:0 auto;padding:16px}}
+h1{{font-size:22px;margin:4px 0 2px}} h2{{font-size:17px;margin:26px 0 2px}} h3{{font-size:20px;margin:0}}
+.hint,.sub,.empty{{color:var(--muted);font-size:13px;margin:2px 0 10px}}
+.chips{{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}}
+.chip{{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;color:#fff;background:var(--c,#555)}}
+.mkts{{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:10px 0}}
+.mk{{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:grid;grid-template-columns:1fr auto;font-size:13px}}
+.mk span{{color:var(--muted);grid-column:1/3}} .mk em{{font-style:normal;text-align:right}} .mk small{{grid-column:1/3;color:var(--muted)}}
+.mk small.uptrend{{color:var(--up)}} .mk small.downtrend{{color:var(--dn)}}
+.up{{color:var(--up)}} .dn{{color:var(--dn)}}
+.card{{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c);border-radius:12px;padding:14px;margin:10px 0}}
+.card header{{display:flex;justify-content:space-between;gap:10px}} .right{{text-align:right}}
+.badge{{background:var(--c);color:#fff;font-weight:700;font-size:13px;padding:4px 10px;border-radius:8px;white-space:nowrap}}
+.px{{font-size:18px;font-weight:600;margin:6px 0 0}}
+.do{{margin:10px 0;font-size:15px}}
+.facts{{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-size:13px}}
+.facts div{{background:var(--bg);border-radius:8px;padding:6px 8px}} .facts span{{display:block;color:var(--muted);font-size:11px}}
+.flags{{margin-top:8px}} .flag{{display:inline-block;font-size:12px;color:#a15c00;background:#a15c0018;border-radius:6px;padding:2px 8px;margin:2px 4px 0 0}}
+details{{margin-top:10px}} summary{{cursor:pointer;color:var(--muted);font-size:13px}} details img{{width:100%;border-radius:8px;margin-top:8px}}
+.wrap{{overflow-x:auto}} table{{border-collapse:collapse;font-size:12px;width:100%;background:var(--card)}}
+th,td{{padding:6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}} th{{color:var(--muted);font-weight:600}}
+ul.gl{{list-style:none;padding:0;font-size:13px}} ul.gl li{{margin:8px 0}}
+footer{{color:var(--muted);font-size:12px;margin:30px 0 10px}}
+</style></head><body><main>
+<h1>Breakout Scan</h1>
+<p class="hint">Based on the close of <b>{asof_txt}</b> &middot; {n_scanned:,} stocks scanned &middot; {len(res)} new setups</p>
+<div class="chips">{chips}</div>
+<div class="mkts">{mkt}</div>
+{section("Act at tomorrow's open", "New buys, profit-taking and exits.", do_now, empty="No action needed tomorrow.")}
+{section("Watchlist", "Broke out but not confirmed yet, or too far above the breakout level to buy.", watch, empty="Nothing on watch.")}
+{section("Open positions", "Setups that triggered a Buy and are still running.", holding, compact=True, empty="No open positions.")}
+{closed_sec}
+<section><h2>What the labels mean</h2><ul class="gl">{glossary}</ul>
+<p class="hint">Entry, stop and target are calculated from the breakout level. Profit/loss is measured from the close on the day of the Buy signal; your real entry is the next open.</p></section>
+<details><summary>Full scan details ({len(res)} setups)</summary><div class="wrap">{raw_tbl}</div></details>
+<details><summary>Scan diagnostics</summary><ul class="hint">{''.join(f"<li>{x}</li>" for x in DIAG)}</ul></details>
+<footer>Technical screen only - not investment advice. <a href="archive.html">Past scans</a></footer>
+</main></body></html>"""
     with open(path, "w", encoding="utf-8") as f:
         f.write(html)
 
@@ -638,6 +911,57 @@ def _synthetic(kind, seed=1):
     return pd.DataFrame(dict(Open=open_, High=high, Low=low, Close=close, Volume=vol), index=idx)
 
 
+def _tracker_selftest():
+    base = _synthetic("uptrend")
+    d0 = prep(base)
+    r = analyze(d0)
+    r["Ticker"], r["Indexes"] = "TEST", "Test"
+    res = pd.DataFrame([r])
+    asof = d0.index[-1].date().isoformat()
+    R = r["Resistance"]
+
+    def add(df, o, h, l, c, days=1):
+        idx = pd.bdate_range(df.index[-1] + pd.Timedelta(days=1), periods=days)
+        new = pd.DataFrame(dict(Open=[o] * days, High=[h] * days, Low=[l] * days, Close=[c] * days,
+                                Volume=[1.5e6] * days), index=idx)
+        return pd.concat([df, new])
+
+    def run(path_bars):
+        rows = update_tracker([], res, {"TEST": d0}, asof)
+        df, seq = base, [rows[0]["Status"]]
+        for bar in path_bars:
+            df = add(df, *bar)
+            rows = update_tracker(rows, pd.DataFrame(), {"TEST": prep(df)}, df.index[-1].date().isoformat())
+            seq.append(rows[0]["Status"])
+        return seq, rows[0]
+
+    ok = True
+    cases = [
+        ("hold, then stop out", [(R * 1.01, R * 1.02, R * 0.999, R * 1.015), (R * 1.0, R * 1.0, R * 0.95, R * 0.95)],
+         ["WATCH", "BUY", "SELL"]),
+        ("failed hold", [(R * 1.0, R * 1.01, R * 0.97, R * 0.98)], ["WATCH", "DROP"]),
+        ("target, then trail", [(R * 1.01, R * 1.02, R * 0.999, R * 1.015), (R * 1.03, R * 1.04, R * 1.02, R * 1.035),
+                                (R * 1.10, R * 1.25, R * 1.09, R * 1.22), (R * 1.22, R * 1.24, R * 1.20, R * 1.23),
+                                (R * 1.1, R * 1.1, R * 1.0, R * 1.02)],
+         ["WATCH", "BUY", "HOLD", "TAKE PROFIT", "TRAIL", "SELL"]),
+    ]
+    for name, bars, want in cases:
+        seq, last = run(bars)
+        good = seq == want
+        ok &= good
+        print(f"tracker : {name:<20} {' > '.join(seq)}" + ("" if good else f"   EXPECTED {' > '.join(want)}"))
+    # report renders
+    try:
+        import tempfile
+        rows = update_tracker([], res, {"TEST": d0}, asof)
+        with tempfile.TemporaryDirectory() as td:
+            write_html(os.path.join(td, "t.html"), asof, rows, res, {"TEST": d0}, [], 1)
+        print("report  : renders")
+    except Exception as e:
+        print("report  : FAILED", e); ok = False
+    return ok
+
+
 def selftest():
     ok = True
     for kind in ["bottom", "uptrend"]:
@@ -651,6 +975,7 @@ def selftest():
         r = analyze(prep(mod(_synthetic("uptrend"))))
         print(f"{label:<8}: " + ("correctly rejected" if r is None else "WRONGLY ACCEPTED"))
         ok &= r is None
+    ok &= _tracker_selftest()
     print("SELFTEST", "PASSED" if ok else "FAILED")
     return ok
 
@@ -662,7 +987,6 @@ def main():
     ap.add_argument("--tickers", help="text file of Yahoo tickers (one per line) instead of indexes")
     ap.add_argument("--outdir", default=".")
     ap.add_argument("--top", type=int, default=40, help="rows kept in the report")
-    ap.add_argument("--charts", type=int, default=12, help="charts drawn for the top N")
     ap.add_argument("--min-price", type=float, default=CFG["min_price"])
     ap.add_argument("--min-dollar-vol", type=float, default=CFG["min_dollar_vol"])
     ap.add_argument("--open", action="store_true", help="open the HTML report when done")
@@ -683,8 +1007,12 @@ def main():
     tickers = sorted(membership)
     print(f"Universe: {len(tickers)} unique tickers")
 
+    os.makedirs(a.outdir, exist_ok=True)
+    tracker_path = os.path.join(a.outdir, "tracker.csv")
+    rows = load_tracker(tracker_path)
+    tracked = {r["Ticker"] for r in rows if not r["Closed"]}
     ctx_t = ["SPY", "DIA", "QQQ", "IWM", "XIU.TO"]
-    raw = download(sorted(set(tickers) | set(ctx_t)))
+    raw = download(sorted(set(tickers) | set(ctx_t) | tracked))
     DIAG.append(f"Universe {len(tickers)} unique tickers; price data received for {len(raw)}")
     data = {}
     for t, d in raw.items():
@@ -710,18 +1038,22 @@ def main():
     if len(res):
         res = res.sort_values("Score", ascending=False).head(a.top).reset_index(drop=True)
 
-    os.makedirs(a.outdir, exist_ok=True)
-    stamp = dt.date.today().isoformat()
-    csv_path = os.path.join(a.outdir, f"breakouts_{stamp}.csv")
-    html_path = os.path.join(a.outdir, f"breakouts_{stamp}.html")
-    (res.drop(columns=["_b", "_s"]) if len(res) else res).to_csv(csv_path, index=False)
-    write_html(html_path, res, data, market_context(data), len(data), a.charts)
+    asof = max(data[t].index[-1] for t in ctx_t if t in data) if any(t in data for t in ctx_t) \
+        else max(d.index[-1] for d in data.values())
+    asof = pd.Timestamp(asof).date().isoformat()
+    rows = update_tracker(rows, res, data, asof)
+    pd.DataFrame(rows, columns=TRACK_COLS).to_csv(tracker_path, index=False)
 
-    print(f"\n{len(res)} setups passed every rule (scanned {len(data)} tickers in {time.time() - t0:.0f}s)\n")
-    if len(res):
-        show = ["Ticker", "Score", "Category", "Pattern", "Status", "Close", "Resistance", "VolX", "BaseLen"]
-        print(res[show].head(20).to_string(index=False))
-    print(f"\nReport: {os.path.abspath(html_path)}\nCSV:    {os.path.abspath(csv_path)}")
+    csv_path = os.path.join(a.outdir, f"breakouts_{asof}.csv")
+    html_path = os.path.join(a.outdir, f"breakouts_{asof}.html")
+    (res.drop(columns=["_b", "_s"]) if len(res) else res).to_csv(csv_path, index=False)
+    write_html(html_path, asof, rows, res, data, market_context(data), len(data))
+
+    print(f"\n{len(res)} new setups (scanned {len(data)} tickers in {time.time() - t0:.0f}s), close of {asof}\n")
+    live = [r for r in rows if not r["Closed"] or r["StatusSince"] == asof]
+    for r in sorted(live, key=lambda r: r["Status"]):
+        print(f"  {r['Status']:<12} {r['Ticker']:<10} {r['Note']}")
+    print(f"\nReport:  {os.path.abspath(html_path)}\nTracker: {os.path.abspath(tracker_path)}")
     if a.open:
         webbrowser.open("file://" + os.path.abspath(html_path))
 

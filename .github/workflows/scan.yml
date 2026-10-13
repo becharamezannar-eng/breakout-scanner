@@ -1,10 +1,11 @@
-name: Monday breakout scan
+name: Daily breakout scan
 
 on:
   schedule:
-    # 11:15 UTC Mondays = 7:15 ET in summer (EDT), 6:15 ET in winter (EST) - before the open.
+    # Weekdays 22:00 UTC = 6:00 pm ET in summer (EDT), 5:00 pm ET in winter (EST),
+    # after the close so the day's candle and volume are final.
     # GitHub sometimes starts scheduled jobs 5-30 min late.
-    - cron: "15 11 * * 1"
+    - cron: "0 22 * * 1-5"
   workflow_dispatch: {}   # lets you start a scan any time from the Actions tab
 
 permissions:
@@ -38,12 +39,12 @@ jobs:
         run: python breakout_scanner.py --selftest
 
       - name: Scan all six indexes
-        run: python breakout_scanner.py --outdir reports --charts 15
+        run: python breakout_scanner.py --outdir reports
 
       - name: Build report site
         run: |
           mkdir -p site
-          latest=$(ls -t reports/breakouts_*.html | head -1)
+          latest=$(ls reports/breakouts_*.html | sort | tail -1)
           cp "$latest" site/index.html
           cp reports/*.html reports/*.csv site/
           {
