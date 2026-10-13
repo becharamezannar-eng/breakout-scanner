@@ -1,0 +1,3 @@
+Score,Category,Pattern,Status,BreakoutDate,Close,Resistance,PctAboveRes,VolX,RangeATR,UpperWickPct,BaseLen,BaseDepthPct,Touches,ResTests120d,HigherLows,VolRisingInBase,RangeContraction,BaseLow,ATR,Flags,Ticker,Indexes
+54.2,Bottoming,Flat base after drop -> breakout,Fresh - confirm hold next session,2026-10-13,117.08,111.51,5.0,1.67,2.0,2.7,3,4.9,3,0,False,False,False,106.06,3.35,volume < 2x,TVK.TO,S&P/TSX Composite
+51.1,Other,Ascending triangle,Fresh - confirm hold next session,2026-10-13,26.28,25.75,2.06,1.51,1.25,11.8,40,14.6,5,3,True,False,True,21.99,0.75,no clear trend/bottom context; volume < 2x,NFI.TO,S&P/TSX Composite
