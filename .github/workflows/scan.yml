@@ -1,0 +1,69 @@
+name: Monday breakout scan
+
+on:
+  schedule:
+    # 11:15 UTC Mondays = 7:15 ET in summer (EDT), 6:15 ET in winter (EST) - before the open.
+    # GitHub sometimes starts scheduled jobs 5-30 min late.
+    - cron: "15 11 * * 1"
+  workflow_dispatch: {}   # lets you start a scan any time from the Actions tab
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: breakout-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      - name: Self-test
+        run: python breakout_scanner.py --selftest
+
+      - name: Scan all six indexes
+        run: python breakout_scanner.py --outdir reports --charts 15
+
+      - name: Build report site
+        run: |
+          mkdir -p site
+          latest=$(ls -t reports/breakouts_*.html | head -1)
+          cp "$latest" site/index.html
+          cp reports/*.html reports/*.csv site/
+          {
+            echo '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
+            echo '<title>Scan archive</title><body style="font-family:sans-serif;margin:16px"><h1>Past scans</h1><ul>'
+            for f in $(ls -r reports/breakouts_*.html); do n=$(basename "$f"); echo "<li><a href=\"$n\">${n%.html}</a></li>"; done
+            echo '</ul><p><a href="index.html">Latest scan</a></p></body>'
+          } > site/archive.html
+
+      - name: Save report to the repository
+        run: |
+          git config user.name "breakout-bot"
+          git config user.email "breakout-bot@users.noreply.github.com"
+          git add reports
+          git commit -m "Scan $(date -u +%F)" || echo "Nothing new to commit"
+          git push
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
