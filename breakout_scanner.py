@@ -128,9 +128,24 @@ def get_sp500():
     return [_us(s) for s in _pick_col(t, ["Symbol"], 400, 600)]
 
 
+DJIA_FALLBACK = ["AAPL", "AMGN", "AMZN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS",
+                 "GS", "HD", "HON", "IBM", "JNJ", "JPM", "KO", "MCD", "MMM", "MRK",
+                 "MSFT", "NKE", "NVDA", "PG", "SHW", "TRV", "UNH", "V", "VZ", "WMT"]
+
+
 def get_djia():
-    t = _wiki_tables("https://en.wikipedia.org/wiki/Dow_Jones_Industrial_Average")
-    return [_us(s) for s in _pick_col(t, ["Symbol"], 25, 35)]
+    try:
+        t = _wiki_tables("https://en.wikipedia.org/wiki/Dow_Jones_Industrial_Average")
+        for tab in t:
+            col = next((c for c in tab.columns if "symbol" in str(c).lower()), None)
+            if col and 25 <= len(tab) <= 35:
+                syms = [_us(x.split(":")[-1]) for x in tab[col].dropna().astype(str)]
+                if len(syms) >= 28:
+                    return syms
+    except Exception:
+        pass
+    DIAG.append("DJIA: Wikipedia table unavailable, used built-in 30-stock list")
+    return list(DJIA_FALLBACK)
 
 
 def get_tsx():
@@ -147,8 +162,8 @@ def get_nasdaq():
     url = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
     r = requests.get(url, headers=UA, timeout=30)
     r.raise_for_status()
-    df = pd.read_csv(StringIO(r.text), sep="|")
-    df = df[~df["Symbol"].astype(str).str.startswith("File Creation")]
+    df = pd.read_csv(StringIO(r.text), sep="|", dtype=str, keep_default_na=False)
+    df = df[~df["Symbol"].str.startswith("File Creation")]
     df = df[(df["Test Issue"] == "N") & (df["ETF"] == "N")]
     bad = df["Security Name"].astype(str).str.contains(
         r"Warrant|\bUnits?\b|\bRights?\b|Preferred|Notes due|Debenture", case=False, regex=True)
@@ -158,18 +173,50 @@ def get_nasdaq():
     return [_us(s) for s in syms]
 
 
-def get_r2000():
+def _ishares_r2000():
     url = ("https://www.ishares.com/us/products/239710/ishares-russell-2000-etf/"
            "1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund")
-    r = requests.get(url, headers=UA, timeout=60)
+    hdr = dict(UA, Accept="text/csv,*/*", Referer="https://www.ishares.com/us/products/239710/")
+    r = requests.get(url, headers=hdr, timeout=60)
     r.raise_for_status()
     lines = r.text.splitlines()
-    start = next(i for i, l in enumerate(lines) if l.startswith("Ticker,"))
-    df = pd.read_csv(StringIO("\n".join(lines[start:])), on_bad_lines="skip")
+    start = next((i for i, l in enumerate(lines) if l.lstrip('\ufeff"').startswith("Ticker")), None)
+    if start is None:
+        raise ValueError(f"iShares returned no holdings table (HTTP {r.status_code}, {len(r.text)} bytes)")
+    df = pd.read_csv(StringIO("\n".join(lines[start:])), on_bad_lines="skip", dtype=str)
     df = df[df["Asset Class"].astype(str).str.strip() == "Equity"]
     syms = df["Ticker"].astype(str).str.strip()
     syms = syms[syms.str.match(r"^[A-Z][A-Z0-9 .\-]*$")]
-    return [_us(s) for s in syms]
+    out = [_us(x) for x in syms]
+    if len(out) < 1500:
+        raise ValueError(f"only {len(out)} holdings parsed")
+    return out
+
+
+def _nyse_listed():
+    """NYSE / NYSE American common stocks - fallback universe for Russell 2000 names
+    not already covered by the Nasdaq Composite."""
+    url = "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
+    r = requests.get(url, headers=UA, timeout=30)
+    r.raise_for_status()
+    df = pd.read_csv(StringIO(r.text), sep="|", dtype=str, keep_default_na=False)
+    df = df[~df["ACT Symbol"].str.startswith("File Creation")]
+    df = df[(df["Test Issue"] == "N") & (df["ETF"] == "N") & df["Exchange"].isin(["N", "A"])]
+    bad = df["Security Name"].str.contains(
+        r"Warrant|\bUnits?\b|\bRights?\b|Preferred|Notes due|Debenture|Depositary Shares", case=False, regex=True)
+    syms = df.loc[~bad, "ACT Symbol"]
+    syms = syms[~syms.str.contains(r"[\$\.\^]", regex=True)]
+    return [_us(x) for x in syms]
+
+
+def get_r2000():
+    try:
+        return _ishares_r2000()
+    except Exception as e:
+        DIAG.append(f"Russell 2000: iShares holdings unavailable ({str(e)[:100]}); "
+                    "using NYSE-listed stocks + Nasdaq Composite as the small-cap universe")
+        INDEX_NAMES["r2000"] = "NYSE-listed (R2000 proxy)"
+        return _nyse_listed()
 
 
 FETCHERS = dict(tsx=get_tsx, tsx60=get_tsx60, sp500=get_sp500,
@@ -191,7 +238,7 @@ def build_universe(index_keys):
             DIAG.append(f"{INDEX_NAMES[k]}: FAILED - {str(e)[:150]}")
             continue
         for s in syms:
-            membership.setdefault(s, set()).add(INDEX_NAMES[k])
+            membership.setdefault(s, set()).add(INDEX_NAMES[k])   # label read after fetch
     return membership
 
 # --------------------------------------------------------------------------
