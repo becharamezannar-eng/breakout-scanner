@@ -176,14 +176,19 @@ FETCHERS = dict(tsx=get_tsx, tsx60=get_tsx60, sp500=get_sp500,
                 djia=get_djia, nasdaq=get_nasdaq, r2000=get_r2000)
 
 
+DIAG = []   # diagnostics shown at the bottom of the report
+
+
 def build_universe(index_keys):
     membership = {}
     for k in index_keys:
         try:
             syms = FETCHERS[k]()
             print(f"  {INDEX_NAMES[k]:<20} {len(syms):>5} tickers")
+            DIAG.append(f"{INDEX_NAMES[k]}: {len(syms)} tickers")
         except Exception as e:
             print(f"  {INDEX_NAMES[k]:<20} FAILED ({e}) - skipped")
+            DIAG.append(f"{INDEX_NAMES[k]}: FAILED - {str(e)[:150]}")
             continue
         for s in syms:
             membership.setdefault(s, set()).add(INDEX_NAMES[k])
@@ -554,6 +559,7 @@ figure{{margin:16px 0}} img{{max-width:100%}} figcaption{{font-size:12px;color:#
 <h3>Market context</h3><ul>{ctx_html}</ul>
 <h3>Setups</h3><div class="wrap">{table}</div>
 <h3>Charts (top {min(n_charts, len(res))})</h3>{''.join(charts)}
+<h3>Scan diagnostics</h3><ul class="note">{''.join(f"<li>{x}</li>" for x in DIAG)}</ul>
 </body></html>"""
     with open(path, "w", encoding="utf-8") as f:
         f.write(html)
@@ -632,6 +638,7 @@ def main():
 
     ctx_t = ["SPY", "DIA", "QQQ", "IWM", "XIU.TO"]
     raw = download(sorted(set(tickers) | set(ctx_t)))
+    DIAG.append(f"Universe {len(tickers)} unique tickers; price data received for {len(raw)}")
     data = {}
     for t, d in raw.items():
         try:
