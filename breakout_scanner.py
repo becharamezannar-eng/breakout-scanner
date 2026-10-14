@@ -291,6 +291,25 @@ def download(tickers, period="2y", chunk=150):
     return out
 
 
+VOL_CURVE = [(0, 0.0), (30, 0.17), (60, 0.26), (90, 0.33), (150, 0.44), (210, 0.53),
+             (270, 0.63), (330, 0.76), (360, 0.85), (390, 1.0)]   # typical share of daily volume by minute of session
+
+
+def market_open_now():
+    now = dt.datetime.now(ET)
+    return now.weekday() < 5 and dt.time(9, 30) <= now.time() < dt.time(16, 0)
+
+
+def session_fraction(now=None):
+    now = now or dt.datetime.now(ET)
+    m = min(390, max(1, now.hour * 60 + now.minute - 570))
+    xs, ys = zip(*VOL_CURVE)
+    return float(max(0.08, np.interp(m, xs, ys)))
+
+
+LIVE = {"on": False}
+
+
 def drop_live_bar(d):
     """Remove today's still-forming candle when run during market hours."""
     now = dt.datetime.now(ET)
@@ -1066,6 +1085,308 @@ def update_tracker(rows, res, data, asof):
     return rows
 
 # --------------------------------------------------------------------------
+# Market review (top of every report)
+# --------------------------------------------------------------------------
+REVIEW_INDEXES = [("SPY", "S&P 500"), ("QQQ", "Nasdaq-100"), ("DIA", "Dow Jones"), ("IWM", "Russell 2000"),
+                  ("XIU.TO", "S&P/TSX 60")]
+REVIEW_MACRO = [("^VIX", "VIX (volatility)"), ("^TNX", "US 10-yr yield"), ("CAD=X", "USD/CAD"),
+                ("CL=F", "Crude oil"), ("GC=F", "Gold")]
+SECTOR_NAMES = {"XLK": "Technology", "XLF": "Financials", "XLV": "Health Care", "XLE": "Energy",
+                "XLI": "Industrials", "XLY": "Consumer Discretionary", "XLP": "Consumer Staples",
+                "XLU": "Utilities", "XLRE": "Real Estate", "XLB": "Materials", "XLC": "Communication",
+                "XEG.TO": "Energy", "XFN.TO": "Financials", "XMA.TO": "Materials", "XIT.TO": "Technology",
+                "XRE.TO": "REITs", "XUT.TO": "Utilities", "XST.TO": "Consumer Staples"}
+MACRO_TICKERS = [t for t, _ in REVIEW_MACRO]
+
+
+def _chg(d, n):
+    c = d["Close"].dropna()
+    return (c.iloc[-1] / c.iloc[-1 - n] - 1) * 100 if len(c) > n and c.iloc[-1 - n] > 0 else np.nan
+
+
+def _ytd(d):
+    c = d["Close"].dropna()
+    prev = c[c.index.year < c.index[-1].year]
+    return (c.iloc[-1] / prev.iloc[-1] - 1) * 100 if len(prev) else np.nan
+
+
+def breadth_today(data, tickers):
+    """Advancers/decliners, up-volume share, 52-week highs/lows, % above 50/200-day on the last bar."""
+    adv = dec = nh = nl = a50 = a200 = n50 = n200 = 0
+    upv = dnv = 0.0
+    lasts = [data[t].index[-1] for t in tickers if data.get(t) is not None and len(data[t]) >= 60]
+    last = pd.Series(lasts).mode().iloc[0] if lasts else None      # the session most stocks have
+    for t in tickers:
+        d = data.get(t)
+        if d is None or len(d) < 60 or d.index[-1] != last:
+            continue
+        c, pc, v = d["Close"].iloc[-1], d["Close"].iloc[-2], d["Volume"].iloc[-1]
+        if c > pc:
+            adv += 1; upv += v * c
+        elif c < pc:
+            dec += 1; dnv += v * c
+        w = d.iloc[-253:-1]
+        if len(w) >= 200:
+            nh += d["High"].iloc[-1] > w["High"].max()
+            nl += d["Low"].iloc[-1] < w["Low"].min()
+        if pd.notna(d["SMA50"].iloc[-1]):
+            n50 += 1; a50 += c > d["SMA50"].iloc[-1]
+        if pd.notna(d["SMA200"].iloc[-1]):
+            n200 += 1; a200 += c > d["SMA200"].iloc[-1]
+    tot = adv + dec
+    return dict(adv=adv, dec=dec, ad=adv / tot if tot else np.nan, upvol=upv / (upv + dnv) if upv + dnv else np.nan,
+                nh=int(nh), nl=int(nl), a50=a50 / n50 if n50 else np.nan, a200=a200 / n200 if n200 else np.nan, n=tot)
+
+
+def market_regime(spy_state, br, vix):
+    """Overall stance for breakout trading."""
+    trend, dist = spy_state["Trend"], spy_state["DistDays"]
+    a50 = br["a50"]
+    if trend == "Downtrend" or (np.isfinite(vix) and vix >= 28) or (np.isfinite(a50) and a50 < 0.25 and trend != "Uptrend"):
+        return ("Risk-off", "#b42318", "Breakouts fail often in this tape. Avoid new long entries; protect open positions.")
+    if (np.isfinite(a50) and a50 < 0.45) or dist >= 6 or (np.isfinite(vix) and vix >= 20) or trend == "Mixed":
+        return ("Cautious", "#a15c00", "Narrow or shaky market. Trade only the strongest setups, at half size, and take profits sooner.")
+    if np.isfinite(a50) and a50 >= 0.6 and dist <= 4 and (not np.isfinite(vix) or vix < 18):
+        return ("Risk-on", "#16794a", "Broad, healthy advance. Breakouts have the best odds; normal position size.")
+    return ("Constructive", "#1d5fbf", "Market supports breakouts, but be selective; normal size on the best setups.")
+
+
+def market_review(data, tickers, n_setups=None, live=False):
+    spy = data.get("SPY")
+    us = [t for t in tickers if region(t) == "US"]
+    ca = [t for t in tickers if region(t) == "CA"]
+    br_us, br_ca = breadth_today(data, us), breadth_today(data, ca)
+    st_us = market_state(spy, breadth_series(data, us), spy.index[-1]) if spy is not None else \
+        dict(Trend="Unknown", Breadth=np.nan, DistDays=0, Pressure=False)
+    xiu = data.get("XIU.TO")
+    st_ca = market_state(xiu, breadth_series(data, ca), xiu.index[-1]) if xiu is not None else None
+    vixd = data.get("^VIX")
+    vix = vixd["Close"].iloc[-1] if vixd is not None and len(vixd) else np.nan
+    vix_chg = vixd["Close"].iloc[-1] - vixd["Close"].iloc[-2] if vixd is not None and len(vixd) > 1 else np.nan
+    regime, rcolor, advice = market_regime(st_us, br_us, vix)
+
+    # ---- index & macro table
+    def row(t, name, pct=True):
+        d = data.get(t)
+        if d is None or len(d) < 25:
+            return ""
+        c = d["Close"].iloc[-1]
+        cells = [_chg(d, 1), _chg(d, 5), _chg(d, 21), _ytd(d)]
+        inv = t == "^VIX"
+        tds = "".join(f'<td class="{"up" if (x >= 0) != inv else "dn"}">{x:+.1f}%</td>' if np.isfinite(x) else "<td>-</td>" for x in cells)
+        if t == "^TNX":
+            c_txt = f"{c:.2f}%"
+            ch = (c - d["Close"].iloc[-2]) * 100
+            tds = f'<td class="{"dn" if ch >= 0 else "up"}">{ch:+.0f} bp</td>' + "".join("<td>-</td>" for _ in range(3))
+        else:
+            c_txt = _f(c)
+        trend = ""
+        if pct and pd.notna(d["SMA200"].iloc[-1]):
+            s50, s200 = d["SMA50"].iloc[-1], d["SMA200"].iloc[-1]
+            trend = "Uptrend" if c > s50 > s200 else "Downtrend" if c < s50 < s200 else "Mixed"
+        return f'<tr><td class="tk">{name}</td><td>{c_txt}</td>{tds}<td class="{trend.lower()}">{trend}</td></tr>'
+
+    idx_rows = "".join(row(t, n) for t, n in REVIEW_INDEXES)
+    mac_rows = "".join(row(t, n, pct=False) for t, n in REVIEW_MACRO)
+    table = (f'<div class="wrap"><table class="mr"><tr><th class="tk">Market</th><th>Last</th><th>1 day</th><th>1 week</th>'
+             f'<th>1 month</th><th>YTD</th><th>Trend</th></tr>{idx_rows}'
+             f'<tr class="sep"><td colspan="7">Volatility, rates, currency, commodities</td></tr>{mac_rows}</table></div>')
+
+    # ---- sectors
+    def sector_rank(etfs):
+        out = []
+        for e in etfs:
+            d = data.get(e)
+            if d is not None and len(d) > 22:
+                out.append((SECTOR_NAMES.get(e, e), _chg(d, 5), _chg(d, 21)))
+        return sorted([x for x in out if np.isfinite(x[2])], key=lambda x: -x[2])
+
+    us_sec = sector_rank([e for e in SECTOR_ETF["US"].values()])
+    ca_sec = sector_rank([e for e in SECTOR_ETF["CA"].values()])
+
+    def sec_list(lst):
+        if not lst:
+            return '<p class="hint">No sector data.</p>'
+        items = "".join(f'<div class="sr"><span>{n}</span><i><b class="{"up" if m >= 0 else "dn"}" '
+                        f'style="width:{min(100, abs(m) * 8):.0f}%"></b></i><em class="{"up" if m >= 0 else "dn"}">{m:+.1f}%</em></div>'
+                        for n, w, m in lst)
+        return f'<div class="srs">{items}</div>'
+
+    # ---- narrative
+    def pct(x):
+        return f"{x * 100:.0f}%" if np.isfinite(x) else "n/a"
+
+    lines = []
+    if spy is not None and len(spy) > 22:
+        d1, d21 = _chg(spy, 1), _chg(spy, 21)
+        above = "above" if spy["Close"].iloc[-1] > spy["SMA50"].iloc[-1] else "below"
+        txt = (f"The S&P 500 {'is ' + ('up' if d1 >= 0 else 'down') + f' {abs(d1):.1f}% so far today' if live else ('rose' if d1 >= 0 else 'fell') + f' {abs(d1):.1f}%'}"
+               f" and is {d21:+.1f}% over the past month, {above} its 50-day average ({st_us['Trend'].lower()}).")
+        q, iwm = data.get("QQQ"), data.get("IWM")
+        if q is not None and iwm is not None and len(q) > 22 and len(iwm) > 22:
+            lead = "Large-cap tech" if _chg(q, 21) > _chg(iwm, 21) else "Small caps"
+            txt += f" {lead} led over the month (Nasdaq-100 {_chg(q, 21):+.1f}%, Russell 2000 {_chg(iwm, 21):+.1f}%)."
+        lines.append(("Indexes", txt))
+    if np.isfinite(br_us["a50"]):
+        health = ("broad" if br_us["a50"] >= 0.6 else "healthy" if br_us["a50"] >= 0.5 else
+                  "narrow" if br_us["a50"] >= 0.3 else "very weak")
+        txt = (f"Participation is {health}: {pct(br_us['a50'])} of US stocks are above their 50-day average and "
+               f"{pct(br_us['a200'])} above their 200-day. {br_us['nh']} new 52-week highs vs {br_us['nl']} new lows; "
+               f"{pct(br_us['ad'])} of stocks advanced, carrying {pct(br_us['upvol'])} of the dollar volume.")
+        if st_us["DistDays"] >= 5:
+            txt += f" {st_us['DistDays']} distribution days in the last 25 sessions point to institutional selling."
+        lines.append(("Breadth", txt))
+    if np.isfinite(vix):
+        mood = "calm" if vix < 15 else "normal" if vix < 20 else "elevated" if vix < 28 else "stressed"
+        txt = f"Volatility is {mood}: VIX {vix:.1f} ({vix_chg:+.1f})."
+        tnx, cad = data.get("^TNX"), data.get("CAD=X")
+        if tnx is not None and len(tnx) > 6:
+            txt += f" The US 10-year yield is {tnx['Close'].iloc[-1]:.2f}% ({(tnx['Close'].iloc[-1] - tnx['Close'].iloc[-6]) * 100:+.0f} bp this week)."
+        if cad is not None and len(cad) > 6:
+            txt += f" USD/CAD {cad['Close'].iloc[-1]:.4f}."
+        lines.append(("Risk", txt))
+    if len(us_sec) >= 4:
+        lines.append(("Sectors", f"Leading over the month: {us_sec[0][0]} ({us_sec[0][2]:+.1f}%) and {us_sec[1][0]} ({us_sec[1][2]:+.1f}%). "
+                                 f"Lagging: {us_sec[-1][0]} ({us_sec[-1][2]:+.1f}%) and {us_sec[-2][0]} ({us_sec[-2][2]:+.1f}%)."))
+    if xiu is not None and len(xiu) > 22 and st_ca:
+        lines.append(("Canada", f"The TSX 60 is {_chg(xiu, 1):+.1f}% on the day and {_chg(xiu, 21):+.1f}% over the month "
+                                f"({st_ca['Trend'].lower()}); {pct(br_ca['a50'])} of TSX stocks are above their 50-day average"
+                                + (f", with {ca_sec[0][0]} leading." if ca_sec else ".")))
+    if n_setups is not None:
+        lines.append(("Scanner", f"{n_setups} breakout{'s' if n_setups != 1 else ''} passed every hard rule"
+                                 f"{' so far today' if live else ' today'}; see the scores below."))
+    story = "".join(f"<li><b>{k}.</b> {v}</li>" for k, v in lines)
+
+    tiles = [("US breadth", pct(br_us["a50"]), "above 50-day"), ("New highs / lows", f"{br_us['nh']} / {br_us['nl']}", "52-week, US"),
+             ("Distribution days", str(st_us["DistDays"]), "S&P 500, 25 sessions"),
+             ("VIX", f"{vix:.1f}" if np.isfinite(vix) else "-", f"{vix_chg:+.1f} today" if np.isfinite(vix_chg) else ""),
+             ("Advancers", pct(br_us["ad"]), f"{br_us['adv']:,} up / {br_us['dec']:,} down"),
+             ("Canada breadth", pct(br_ca["a50"]), "TSX above 50-day")]
+    tiles_html = "".join(f'<div class="tile"><span>{a}</span><b>{b}</b><small>{c}</small></div>' for a, b, c in tiles)
+
+    html = f"""<section class="review">
+<div class="stance" style="--c:{rcolor}"><span>Market stance</span><b>{regime}</b><p>{advice}</p></div>
+<h2>Market review</h2>
+<ul class="story">{story}</ul>
+<div class="tiles">{tiles_html}</div>
+{table}
+<details><summary>Sector performance, past month</summary><div class="secs"><div><h4>US sectors</h4>{sec_list(us_sec)}</div>
+<div><h4>Canadian sectors</h4>{sec_list(ca_sec)}</div></div></details>
+</section>"""
+    MARKET_STANCE.clear()
+    MARKET_STANCE.update(regime=regime, advice=advice)
+    return html
+
+
+MARKET_STANCE = {}
+
+REVIEW_CSS = """
+.review{margin:10px 0 6px}
+.stance{background:var(--card);border:1px solid var(--line);border-left:6px solid var(--c);border-radius:12px;padding:12px 14px}
+.stance span{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.stance b{font-size:22px;color:var(--c)} .stance p{margin:4px 0 0}
+.story{font-size:15px;line-height:1.5;margin:8px 0 12px;padding:0;list-style:none}
+.story li{margin:0 0 8px} .story b{color:var(--ink)}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.tile span{display:block;color:var(--muted);font-size:11px} .tile b{font-size:18px} .tile small{display:block;color:var(--muted);font-size:11px}
+table.mr td,table.mr th{font-size:13px;padding:7px 8px} table.mr tr.sep td{color:var(--muted);font-size:11px;text-transform:uppercase;background:var(--bg)}
+td.uptrend{color:var(--up)} td.downtrend{color:var(--dn)} td.mixed{color:#a15c00}
+.secs{display:grid;grid-template-columns:1fr;gap:10px} h4{margin:10px 0 4px;font-size:13px;color:var(--muted)}
+.sr{display:grid;grid-template-columns:150px 1fr 54px;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+.sr i{display:block;height:8px;background:var(--line);border-radius:4px;overflow:hidden} .sr i b{display:block;height:100%}
+.sr i b.up{background:var(--up)} .sr i b.dn{background:var(--dn)} .sr em{font-style:normal;text-align:right}
+@media (min-width:640px){.secs{grid-template-columns:1fr 1fr}}
+@media (max-width:420px){.tiles{grid-template-columns:repeat(2,1fr)}}
+"""
+
+# --------------------------------------------------------------------------
+# "Scan now" buttons: start a GitHub run from the page
+# --------------------------------------------------------------------------
+RUN_CSS = """
+.runbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
+.runbar button{font:600 14px/1 -apple-system,"Segoe UI",Roboto,sans-serif;border:0;border-radius:10px;padding:11px 14px;cursor:pointer;
+  background:#1d5fbf;color:#fff} .runbar button.alt{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+.runbar button:disabled{opacity:.6}
+#runstatus{font-size:13px;color:var(--muted);width:100%}
+#runsetup{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:8px 0;font-size:14px;display:none}
+#runsetup input{width:100%;font:14px monospace;padding:9px;border:1px solid var(--line);border-radius:8px;margin:6px 0;background:var(--bg);color:var(--ink)}
+#runsetup ol{padding-left:20px;margin:6px 0} #runsetup li{margin:4px 0}
+#runsetup button{font:600 14px/1 -apple-system,"Segoe UI",Roboto,sans-serif;border:0;border-radius:10px;padding:10px 14px;background:#1d5fbf;color:#fff;cursor:pointer}
+#runsetup button.alt{background:var(--bg);color:var(--ink);border:1px solid var(--line)}
+"""
+
+RUN_HTML = """
+<div class="runbar">
+  <button id="btn-scan" onclick="runNow('scan')">&#8635; Scan now</button>
+  <button class="alt" id="btn-morning" onclick="runNow('morning')">Morning check now</button>
+  <button class="alt" onclick="toggleSetup()">&#9881;</button>
+  <div id="runstatus"></div>
+</div>
+<div id="runsetup">
+  <b>One-time setup for the Scan now button</b>
+  <ol>
+    <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub &rarr; new fine-grained token</a>.</li>
+    <li>Name it "scan button", set an expiry (up to 1 year).</li>
+    <li>Repository access: <b>Only select repositories</b> &rarr; <b>breakout-scanner</b>.</li>
+    <li>Permissions &rarr; Repository &rarr; <b>Actions: Read and write</b>. Nothing else.</li>
+    <li>Generate, copy the token, paste it here and tap Save.</li>
+  </ol>
+  <input id="tok" type="password" placeholder="github_pat_..." autocomplete="off">
+  <button onclick="saveTok()">Save on this device</button> <button class="alt" onclick="clearTok()">Remove</button>
+  <p class="hint">The token stays in this browser only. It can do nothing except start and read runs of this one repository.
+  Without it, the buttons open GitHub's Run page instead.</p>
+</div>
+<script>
+(function(){
+  const owner = location.hostname.split('.')[0];
+  const repo = location.pathname.split('/').filter(Boolean)[0] || 'breakout-scanner';
+  const api = `https://api.github.com/repos/${owner}/${repo}/actions`;
+  const KEY = 'scanTok';
+  const st = document.getElementById('runstatus');
+  const get = () => { try { return localStorage.getItem(KEY) || ''; } catch(e) { return ''; } };
+  window.toggleSetup = () => { const s = document.getElementById('runsetup'); s.style.display = s.style.display === 'block' ? 'none' : 'block'; };
+  window.saveTok = () => { try { localStorage.setItem(KEY, document.getElementById('tok').value.trim()); } catch(e) {} toggleSetup(); st.textContent = 'Saved. Tap Scan now.'; };
+  window.clearTok = () => { try { localStorage.removeItem(KEY); } catch(e) {} st.textContent = 'Token removed from this device.'; };
+  const H = t => ({ 'Authorization': 'Bearer ' + t, 'Accept': 'application/vnd.github+json' });
+  window.runNow = async (mode) => {
+    const t = get();
+    if (!t) { window.open(`https://github.com/${owner}/${repo}/actions/workflows/scan.yml`, '_blank');
+      st.innerHTML = 'On GitHub: tap <b>Run workflow</b>, pick <b>' + mode + '</b>, then <b>Run workflow</b>. Or set up one-tap runs with &#9881;.'; return; }
+    document.querySelectorAll('.runbar button').forEach(b => b.disabled = true);
+    const started = new Date();
+    st.textContent = 'Starting ' + mode + '...';
+    try {
+      const r = await fetch(`${api}/workflows/scan.yml/dispatches`, { method: 'POST', headers: H(t),
+        body: JSON.stringify({ ref: 'main', inputs: { mode } }) });
+      if (r.status !== 204) { throw new Error(r.status === 401 || r.status === 403 ? 'token rejected - check it in setup' : 'GitHub said ' + r.status); }
+      let run = null;
+      for (let i = 0; i < 160; i++) {
+        await new Promise(res => setTimeout(res, i < 3 ? 5000 : 15000));
+        const q = await fetch(`${api}/runs?event=workflow_dispatch&per_page=5`, { headers: H(t) });
+        const j = await q.json();
+        run = (j.workflow_runs || []).find(x => new Date(x.created_at) >= new Date(started - 60000));
+        const mins = Math.round((new Date() - started) / 60000);
+        if (!run) { st.textContent = 'Waiting for GitHub to start the run...'; continue; }
+        if (run.status !== 'completed') { st.textContent = (run.status === 'queued' ? 'Queued' : 'Running') + ' (' + mins + ' min). A full scan takes about 6-8 minutes; you can leave this page open.'; continue; }
+        if (run.conclusion === 'success') {
+          st.textContent = 'Done. Reloading...';
+          const ny = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+          const mins = ny.getHours() * 60 + ny.getMinutes();
+          const open = ny.getDay() > 0 && ny.getDay() < 6 && mins >= 570 && mins < 960;
+          const page = mode === 'morning' ? 'morning.html' : (open ? 'live.html' : 'index.html');
+          setTimeout(() => { location.href = page + '?t=' + Date.now(); }, 20000);
+        } else { st.innerHTML = 'The run ended with "' + run.conclusion + '". <a href="' + run.html_url + '" target="_blank">See details</a>.'; }
+        break;
+      }
+    } catch (e) { st.textContent = 'Could not start: ' + e.message; }
+    document.querySelectorAll('.runbar button').forEach(b => b.disabled = false);
+  };
+})();
+</script>
+"""
+
+# --------------------------------------------------------------------------
 # Report
 # --------------------------------------------------------------------------
 def chart_png(t, d, row, bars=120):
@@ -1157,6 +1478,9 @@ def instruction(r):
         note = str(r.get("Note", ""))
         if note.startswith("Held, but"):
             return f"{note}. Keep watching; it is dropped after {TRADE['watch_days']} sessions if it doesn't qualify."
+        if LIVE["on"]:
+            return (f"Breaking above <b>{_f(R)}</b> right now on a projected {r['VolX']}x normal volume. Not confirmed: "
+                    f"it needs to close above {_f(R)} today, then hold tomorrow. Tonight's scan will pick it up if it does.")
         return (f"Broke above <b>{_f(R)}</b> today on {r['VolX']}x normal volume. Don't buy yet: tomorrow it must "
                 f"close above {_f(R)} without trading below {_f(R * (1 - CFG['hold_tol']))}, and pass the scorecard.")
     if st == "EXTENDED":
@@ -1243,7 +1567,7 @@ def card_html(r, chart=None, compact=False):
 </article>"""
 
 
-def write_html(path, asof, rows, res, data, ctx, n_scanned):
+def write_html(path, asof, rows, res, data, ctx, n_scanned, review_html="", title="Breakout Scan", subtitle=None):
     asof_txt = pd.Timestamp(asof).strftime("%a %b %d, %Y")
     act = [r for r in rows if not r["Closed"] or r["StatusSince"] == asof]
     order = {"SELL": 0, "TAKE PROFIT": 1, "BUY": 2, "WATCH": 3, "EXTENDED": 4, "HOLD": 5, "TRAIL": 6, "DROP": 7}
@@ -1363,6 +1687,7 @@ table.sum td,table.sum th{{font-size:13px;padding:8px}} table.sum .chip{{font-si
 th,td{{padding:6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}} th{{color:var(--muted);font-weight:600}}
 ul.gl{{list-style:none;padding:0;font-size:13px}} ul.gl li{{margin:8px 0}}
 footer{{color:var(--muted);font-size:12px;margin:30px 0 10px}}
+/*EXTRA_CSS*/
 .score{{display:inline-block;font-size:13px;font-weight:700;padding:1px 7px;border-radius:6px;vertical-align:middle;background:#8884;color:var(--ink)}}
 .score small{{font-weight:400;opacity:.7}} .score.gA{{background:#16794a;color:#fff}} .score.gB{{background:#1d5fbf;color:#fff}} .score.gC{{background:#6b6b6b;color:#fff}}
 .sbs{{margin:8px 0}} .sb{{display:grid;grid-template-columns:80px 1fr 44px;gap:8px;align-items:center;font-size:12px;margin:3px 0}}
@@ -1374,12 +1699,13 @@ ul.ck b{{display:inline-block;width:20px}} .ok{{color:var(--up)}} .no{{color:var
 .rg{{font-size:13px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:6px 0}}
 .links{{font-size:13px}} a{{color:#1d5fbf}}
 </style></head><body><main>
-<h1>Breakout Scan</h1>
-<p class="hint">Based on the close of <b>{asof_txt}</b> &middot; {n_scanned:,} stocks scanned &middot; {len(res)} new setups</p>
+<h1>{title}</h1>
+<p class="hint">{subtitle or f"Based on the close of <b>{asof_txt}</b>"} &middot; {n_scanned:,} stocks scanned &middot; {len(res)} new setups</p>
+<!--RUN-->
+<!--REVIEW-->
+<p class="links"><a href="index.html">Latest scan</a> &middot; <a href="live.html">Live preview</a> &middot; <a href="morning.html">Morning check</a> &middot; <a href="backtest.html">Backtest</a> &middot; <a href="archive.html">Past scans</a></p>
+<h2>Setups</h2>
 <div class="chips">{chips}</div>
-<div class="mkts">{mkt}</div>
-{regime}
-<p class="links"><a href="morning.html">Morning check (10 am)</a> &middot; <a href="backtest.html">Backtest results</a> &middot; <a href="archive.html">Past scans</a></p>
 {summary}
 {section("Act at tomorrow's open", "New buys, profit-taking and exits.", do_now, empty="No action needed tomorrow.")}
 {section("Watchlist", "Broke out but not confirmed yet, or too far above the breakout level to buy.", watch, empty="Nothing on watch.")}
@@ -1392,6 +1718,7 @@ ul.ck b{{display:inline-block;width:20px}} .ok{{color:var(--up)}} .no{{color:var
 <details><summary>Scan diagnostics</summary><ul class="hint">{''.join(f"<li>{x}</li>" for x in DIAG)}</ul></details>
 <footer>Technical screen only - not investment advice. Scores and thresholds are rules of thumb until the backtest supports them.</footer>
 </main></body></html>"""
+    html = html.replace("/*EXTRA_CSS*/", REVIEW_CSS + RUN_CSS).replace("<!--RUN-->", RUN_HTML).replace("<!--REVIEW-->", review_html)
     with open(path, "w", encoding="utf-8") as f:
         f.write(html)
 
@@ -1551,8 +1878,8 @@ def morning_check(outdir, force=False):
     stamp = items[0][2]["time"] if items and items[0][2] else now.strftime("%H:%M ET")
     html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Morning check {now:%Y-%m-%d}</title>
-<style>{PAGE_CSS}</style></head><body><main>
-<h1>Morning check</h1>
+<style>{PAGE_CSS}{RUN_CSS}</style></head><body><main>
+<h1>Morning check</h1>{RUN_HTML}
 <p class="hint">{now:%a %b %d, %Y} &middot; prices as of {stamp} &middot; <a href="index.html">Last night's scan</a></p>
 <p class="hint">Checks last night's Buy, Don't-chase, Watch and open positions against today's session: price vs the
 day's VWAP and its direction, volume compared with the same time on the last 10 days, and the buy zone.
@@ -1730,7 +2057,7 @@ Above 0 and above 1.0 respectively means an edge; the Gate-pass row should beat 
 (those score neutral), daily bars only (no intraday VWAP check), no commissions beyond slippage.</li></ul>"""
     html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Backtest</title>
-<style>{PAGE_CSS}</style></head><body><main><h1>Backtest results</h1>
+<style>{PAGE_CSS}{RUN_CSS}</style></head><body><main><h1>Backtest results</h1>{RUN_HTML}
 <p class="hint">Run {dt.date.today():%b %d, %Y} in {secs / 60:.0f} min &middot; <a href="index.html">Latest scan</a></p>
 <div class="wrap">{body}</div></main></body></html>"""
     html = html.replace('<div class="wrap">', "<div>", 1).replace("<table", '<div class="wrap"><table').replace("</table>", "</table></div>")
@@ -1855,6 +2182,8 @@ def main():
     ap.add_argument("--open", action="store_true", help="open the HTML report when done")
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--morning", action="store_true", help="intraday check of Buy/Watch names (run ~10am ET)")
+    ap.add_argument("--live", action="store_true", help="intraday preview with projected volume (no tracker changes)")
+    ap.add_argument("--auto", action="store_true", help="live preview if the market is open, otherwise the normal scan")
     ap.add_argument("--backtest", action="store_true", help="test the rules on 5 years of history")
     ap.add_argument("--bt-indexes", default="sp500,tsx60,djia", help="universe for --backtest")
     ap.add_argument("--bt-years", type=int, default=5)
@@ -1868,6 +2197,9 @@ def main():
         sys.exit(run_backtest(a))
 
     CFG["min_price"], CFG["min_dollar_vol"] = a.min_price, a.min_dollar_vol
+    LIVE["on"] = bool(a.live or (a.auto and market_open_now()))
+    if LIVE["on"]:
+        print("Market is open: running a live preview (today's volume projected to a full day).")
     t0 = time.time()
     if a.tickers:
         with open(a.tickers) as f:
@@ -1883,12 +2215,20 @@ def main():
     rows = load_tracker(tracker_path)
     tracked = {r["Ticker"] for r in rows if not r["Closed"]}
     ctx_t = ["SPY", "DIA", "QQQ", "IWM", "XIU.TO"]
-    raw = download(sorted(set(tickers) | set(ctx_t) | tracked | set(ALL_SECTOR_ETFS)))
+    raw = download(sorted(set(tickers) | set(ctx_t) | tracked | set(ALL_SECTOR_ETFS) | set(MACRO_TICKERS)))
     DIAG.append(f"Universe {len(tickers)} unique tickers; price data received for {len(raw)}")
     data = {}
+    frac = session_fraction()
+    today = dt.datetime.now(ET).date()
     for t, d in raw.items():
         try:
-            data[t] = prep(drop_live_bar(d))
+            if LIVE["on"]:
+                d = d.copy()
+                if len(d) and pd.Timestamp(d.index[-1]).date() == today:
+                    d.loc[d.index[-1], "Volume"] = d["Volume"].iloc[-1] / frac
+                data[t] = prep(d)
+            else:
+                data[t] = prep(drop_live_bar(d))
         except Exception:
             pass
 
@@ -1940,13 +2280,36 @@ def main():
     asof = max(data[t].index[-1] for t in ctx_t if t in data) if any(t in data for t in ctx_t) \
         else max(d.index[-1] for d in data.values())
     asof = pd.Timestamp(asof).date().isoformat()
+
+    if LIVE["on"]:
+        now = dt.datetime.now(ET)
+        prev = load_tracker(tracker_path)
+        prev_open = {r["Ticker"] for r in prev if not r["Closed"]}
+        live_rows = update_tracker([], res[~res["Ticker"].isin(prev_open)] if len(res) else res, data, asof)
+        live_rows += [r for r in prev if not r["Closed"]]
+        try:
+            review = market_review(data, tickers, n_setups=len(found), live=True)
+        except Exception as e:
+            review = ""
+            DIAG.append(f"Market review failed: {str(e)[:120]}")
+        sub = (f"<b>Live preview</b>, prices as of {now:%H:%M} ET ({frac * 100:.0f}% of a normal day's volume traded); "
+               "today's volume is projected to a full day. Nothing here is final until the close")
+        write_html(os.path.join(a.outdir, "live.html"), asof, live_rows, res, data, market_context(data), len(data),
+                   review, title="Live preview", subtitle=sub)
+        print(f"Live preview: {len(res)} setups in progress -> {os.path.join(a.outdir, 'live.html')}")
+        return
     rows = update_tracker(rows, res, data, asof)
     pd.DataFrame(rows, columns=TRACK_COLS).to_csv(tracker_path, index=False)
 
     csv_path = os.path.join(a.outdir, f"breakouts_{asof}.csv")
     html_path = os.path.join(a.outdir, f"breakouts_{asof}.html")
     (res.drop(columns=["_b", "_s"]) if len(res) else res).to_csv(csv_path, index=False)
-    write_html(html_path, asof, rows, res, data, market_context(data), len(data))
+    try:
+        review = market_review(data, tickers, n_setups=len(found))
+    except Exception as e:
+        review = ""
+        DIAG.append(f"Market review failed: {str(e)[:120]}")
+    write_html(html_path, asof, rows, res, data, market_context(data), len(data), review)
 
     print(f"\n{len(res)} new setups (scanned {len(data)} tickers in {time.time() - t0:.0f}s), close of {asof}\n")
     live = [r for r in rows if not r["Closed"] or r["StatusSince"] == asof]

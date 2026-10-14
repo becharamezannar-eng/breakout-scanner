@@ -60,7 +60,7 @@ jobs:
 
       - name: Evening scan (all six indexes)
         if: steps.mode.outputs.mode == 'scan'
-        run: python breakout_scanner.py --outdir reports
+        run: python breakout_scanner.py --outdir reports ${{ github.event_name == 'workflow_dispatch' && '--auto' || '' }}
 
       - name: Morning check
         if: steps.mode.outputs.mode == 'morning'

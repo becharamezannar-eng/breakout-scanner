@@ -7,7 +7,10 @@ looking for volume-confirmed breakouts out of tight consolidations
 
 - **Latest report:** the GitHub Pages link for this repository (`https://<your-username>.github.io/breakout-scanner/`)
 - **Past scans:** `.../archive.html`, or the `reports/` folder
-- **Run it now:** Actions tab → *Daily breakout scan* → *Run workflow*
+- **Run it now:** the **Scan now** button at the top of the report (one-time token setup under the gear icon),
+  or Actions tab → *Daily breakout scan* → *Run workflow*. During market hours a manual scan writes `live.html`
+  (today's volume projected to a full day) and leaves the tracker untouched.
+- **Market review:** top of every report - indexes, VIX, 10-yr yield, USD/CAD, oil, gold, breadth, sectors and a market stance.
 - **Tracker:** `reports/tracker.csv` follows every setup day to day:
   Watch → Buy (or Don't chase) → Hold → Take profit → Hold-trailing → Sell, or Drop if it fails before entry.
 
