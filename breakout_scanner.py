@@ -1087,8 +1087,8 @@ def update_tracker(rows, res, data, asof):
 # --------------------------------------------------------------------------
 # Market review (top of every report)
 # --------------------------------------------------------------------------
-REVIEW_INDEXES = [("SPY", "S&P 500"), ("QQQ", "Nasdaq-100"), ("DIA", "Dow Jones"), ("IWM", "Russell 2000"),
-                  ("XIU.TO", "S&P/TSX 60")]
+REVIEW_INDEXES = [("SPY", "S&P 500 (SPY)"), ("QQQ", "Nasdaq-100 (QQQ)"), ("DIA", "Dow Jones (DIA)"),
+                  ("IWM", "Russell 2000 (IWM)"), ("XIU.TO", "S&P/TSX 60 (XIU)")]   # tracked through their ETFs
 REVIEW_MACRO = [("^VIX", "VIX (volatility)"), ("^TNX", "US 10-yr yield"), ("CAD=X", "USD/CAD"),
                 ("CL=F", "Crude oil"), ("GC=F", "Gold")]
 SECTOR_NAMES = {"XLK": "Technology", "XLF": "Financials", "XLV": "Health Care", "XLE": "Energy",
@@ -1188,7 +1188,7 @@ def market_review(data, tickers, n_setups=None, live=False):
 
     idx_rows = "".join(row(t, n) for t, n in REVIEW_INDEXES)
     mac_rows = "".join(row(t, n, pct=False) for t, n in REVIEW_MACRO)
-    table = (f'<div class="wrap"><table class="mr"><tr><th class="tk">Market</th><th>Last</th><th>1 day</th><th>1 week</th>'
+    table = (f'<div class="wrap"><table class="mr"><tr><th class="tk">Market (ETF price)</th><th>Last</th><th>1 day</th><th>1 week</th>'
              f'<th>1 month</th><th>YTD</th><th>Trend</th></tr>{idx_rows}'
              f'<tr class="sep"><td colspan="7">Volatility, rates, currency, commodities</td></tr>{mac_rows}</table></div>')
 
@@ -1207,7 +1207,7 @@ def market_review(data, tickers, n_setups=None, live=False):
     def sec_list(lst):
         if not lst:
             return '<p class="hint">No sector data.</p>'
-        items = "".join(f'<div class="sr"><span>{n}</span><i><b class="{"up" if m >= 0 else "dn"}" '
+        items = "".join(f'<div class="sr" title="{n}: {m:+.1f}% past month, {w:+.1f}% past week"><span>{n}</span><i><b class="{"up" if m >= 0 else "dn"}" '
                         f'style="width:{min(100, abs(m) * 8):.0f}%"></b></i><em class="{"up" if m >= 0 else "dn"}">{m:+.1f}%</em></div>'
                         for n, w, m in lst)
         return f'<div class="srs">{items}</div>'
