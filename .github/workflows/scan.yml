@@ -4,8 +4,9 @@ on:
   schedule:
     # Evening scan: weekdays 22:00 UTC = 6 pm ET (summer) / 5 pm ET (winter), after the close.
     - cron: "0 22 * * 1-5"
-    # Morning check: 14:15 and 15:15 UTC. The script only works between 9:50 and 11:30 ET,
-    # so in summer it runs at 10:15 and 11:15 ET, in winter at 10:15 ET.
+    # Morning check: 14:15 and 15:15 UTC. The script only works between 9:50 am and 12:45 pm ET
+    # (GitHub often starts these ~30 min late), so in summer it runs ~10:15 and ~11:15 ET,
+    # in winter ~10:15 ET. Its verdicts are also shown at the top of the main report.
     - cron: "15 14 * * 1-5"
     - cron: "15 15 * * 1-5"
     # Backtest: Saturdays 12:00 UTC.

@@ -14,7 +14,7 @@ looking for volume-confirmed breakouts out of tight consolidations
 - **Tracker:** `reports/tracker.csv` follows every setup day to day:
   Watch → Buy (or Don't chase) → Hold → Take profit → Hold-trailing → Sell, or Drop if it fails before entry.
 
-- **Morning check:** `morning.html`, around 10:15 am ET - intraday VWAP, time-of-day volume and buy-zone verdict for last night's names
+- **Morning check:** around 10:15 and 11:15 am ET - intraday VWAP, time-of-day volume and buy-zone verdict for last night's names, shown at the top of the main report and in full on `morning.html`
 - **Backtest:** `backtest.html`, every Saturday - 5 years of S&P 500 + TSX 60 + Dow, win rate and average R by score, pattern and volume
 
 Every setup is scored out of 100 with the checklist weights (volume 20, price action 15, base 10, relative strength 15,

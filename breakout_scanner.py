@@ -1704,6 +1704,7 @@ ul.ck b{{display:inline-block;width:20px}} .ok{{color:var(--up)}} .no{{color:var
 <h1>{title}</h1>
 <p class="hint">{subtitle or f"Based on the close of <b>{asof_txt}</b>"} &middot; {n_scanned:,} stocks scanned &middot; {len(res)} new setups</p>
 <!--RUN-->
+<!--MORNING--><!--/MORNING-->
 <!--REVIEW-->
 <p class="links"><a href="index.html">Latest scan</a> &middot; <a href="live.html">Live preview</a> &middot; <a href="morning.html">Morning check</a> &middot; <a href="backtest.html">Backtest</a> &middot; <a href="archive.html">Past scans</a></p>
 <h2>Setups</h2>
@@ -1831,8 +1832,8 @@ def morning_verdict(r, x):
 def morning_check(outdir, force=False):
     now = dt.datetime.now(ET)
     force = force or os.environ.get("FORCE_MORNING") == "1"
-    if not force and (now.weekday() >= 5 or not (dt.time(9, 50) <= now.time() <= dt.time(11, 30))):
-        print(f"Morning check skipped: it is {now:%a %H:%M} ET (runs 9:50-11:30 ET on weekdays).")
+    if not force and (now.weekday() >= 5 or not (dt.time(9, 50) <= now.time() <= dt.time(12, 45))):
+        print(f"Morning check skipped: it is {now:%a %H:%M} ET (runs 9:50 am-12:45 pm ET on weekdays).")
         return 0
     rows = [r for r in load_tracker(os.path.join(outdir, "tracker.csv"))
             if not r["Closed"] and r["Status"] in ("BUY", "EXTENDED", "WATCH", "HOLD", "TRAIL", "TAKE PROFIT")]
@@ -1892,8 +1893,46 @@ US quotes are near real-time; TSX quotes can be delayed about 15 minutes. Re-che
 </main></body></html>"""
     with open(os.path.join(outdir, "morning.html"), "w", encoding="utf-8") as f:
         f.write(html)
+    if not demo:
+        inject_morning_summary(outdir, items, stamp, now)
     print(f"Morning check written for {len(items)} names")
     return 0
+
+
+def inject_morning_summary(outdir, items, stamp, now):
+    """Show this morning's verdicts at the top of the latest evening report."""
+    import re
+    scans = sorted(f for f in os.listdir(outdir) if f.startswith("breakouts_") and f.endswith(".html"))
+    if not scans:
+        return
+    if items:
+        lines = "".join(
+            f'<li><b>{r["Ticker"]}</b> <span style="background:{color};color:#fff;font-size:11px;font-weight:700;'
+            f'padding:2px 7px;border-radius:6px">{verdict}</span> {text}</li>'
+            for _, r, x, (verdict, color, text) in items)
+        body = f'<ul style="list-style:none;padding:0;margin:6px 0 0;font-size:14px">{lines}</ul>'
+    else:
+        body = '<p style="margin:6px 0 0">Nothing from last night to check: no Buy, Watch or open positions.</p>'
+    block = (f'<!--MORNING--><section style="background:var(--card);border:1px solid var(--line);'
+             f'border-left:6px solid #1d5fbf;border-radius:12px;padding:12px 14px;margin:10px 0">'
+             f'<span style="display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em">'
+             f'Morning check &middot; {now:%a %b %d} &middot; {stamp}</span>{body}'
+             f'<p style="margin:8px 0 0;font-size:13px"><a href="morning.html">Full morning check</a> &middot; '
+             f'the rest of this report is from the last close; the next full scan runs after today\'s close.</p>'
+             f'</section><!--/MORNING-->')
+    for name in (scans[-1], "live.html"):
+        path = os.path.join(outdir, name)
+        if not os.path.exists(path):
+            continue
+        page = open(path, encoding="utf-8").read()
+        if "<!--MORNING-->" in page:
+            page = re.sub(r"<!--MORNING-->.*?<!--/MORNING-->", lambda m: block, page, flags=re.S)
+        elif '<section class="review">' in page:
+            page = page.replace('<section class="review">', block + '\n<section class="review">', 1)
+        else:
+            continue
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(page)
 
 # --------------------------------------------------------------------------
 # Backtest: do these rules make money after costs?
