@@ -15,7 +15,7 @@ looking for volume-confirmed breakouts out of tight consolidations
 - **Backtest:** `backtest.html`, every Saturday - 5 years of S&P 500 + TSX 60 + Dow, win rate and average R by score, pattern and volume
 
 Every setup is scored out of 100 with the checklist weights (volume 20, price action 15, base 10, relative strength 15,
-market 10, VWAP/structure 10, reward:risk 15, liquidity 5). Buy = 80+, R:R 2+, no earnings within 5 sessions, under 3 warnings.
+market 10, VWAP/structure 10, reward:risk 15, liquidity 5). Buy = 70+, R:R 2+, no earnings within 5 sessions, under 4 warnings (thresholds set from the backtest).
 
 All thresholds live in the `CFG`, `TRADE` and `ACCOUNT` blocks at the top of `breakout_scanner.py`.
 

@@ -85,9 +85,11 @@ CFG = dict(
     min_rr=2.0,               # minimum reward:risk for a Buy
     max_atr_pct=0.08,         # daily ATR above 8% of price = erratic
     earnings_block_days=5,    # no new Buy with earnings inside this many sessions
-    score_buy=80,             # checklist scorecard: >= 80 Buy candidate
-    score_watch=65,           #                      65-79 watch, < 65 rejected
-    max_warnings=3,           # 3+ false-breakout warnings blocks a Buy
+    # Scorecard thresholds, set from the backtest (Oct 2026, 1,316 trades, 2022-2026):
+    # score 70+ with R:R 2+ averaged +0.19R/trade (PF 1.40, 355 trades); under 65 lost money.
+    score_buy=70,             # checklist scorecard: >= 70 Buy candidate (checklist proposed 80)
+    score_watch=60,           #                      60-69 watch, < 60 rejected (checklist proposed 65)
+    max_warnings=4,           # 4+ false-breakout warnings blocks a Buy
 )
 
 # Position sizing - set these to your own account
@@ -894,8 +896,8 @@ TRACK_COLS = ["Ticker", "Indexes", "Sector", "Category", "Pattern", "Score", "Gr
 ACTIVE = {"WATCH", "BUY", "EXTENDED", "HOLD", "TAKE PROFIT", "TRAIL"}
 
 STATUS_INFO = {
-    "BUY":         ("Buy", "#16794a", "Breakout confirmed and it passes the scorecard (80+/100, R:R 2+, no earnings, under 3 warnings). Entry plan below."),
-    "WATCH":       ("Watch", "#1d5fbf", "Breakout not confirmed yet, or it held but scores 65-79. Not a buy yet."),
+    "BUY":         ("Buy", "#16794a", "Breakout confirmed and it passes the scorecard (70+/100, reward:risk 2+, no earnings within 5 sessions, under 4 warnings). Entry plan below."),
+    "WATCH":       ("Watch", "#1d5fbf", "Breakout not confirmed yet, or it held but doesn't pass the scorecard. Not a buy yet."),
     "EXTENDED":    ("Don't chase", "#a15c00", "Breakout held but price ran too far above the breakout level. Wait for a pullback."),
     "HOLD":        ("Hold", "#3d4a5c", "You own it (if you took the Buy). Keep the stop order in place."),
     "TAKE PROFIT": ("Take profit", "#7a3db8", "Target hit. Sell part, protect the rest."),
