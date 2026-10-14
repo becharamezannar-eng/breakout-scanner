@@ -1,0 +1,500 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Backtest</title>
+<style>
+:root{--bg:#f6f6f4;--card:#fff;--ink:#1c1c1e;--muted:#6b6b70;--line:#e6e6e3;--up:#16794a;--dn:#b42318}
+@media (prefers-color-scheme:dark){:root{--bg:#151517;--card:#1f1f22;--ink:#ececee;--muted:#9a9aa0;--line:#2e2e33;--up:#4cc38a;--dn:#ff6b5e}}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px} h1{font-size:22px;margin:4px 0} h2{font-size:17px;margin:24px 0 6px}
+.hint{color:var(--muted);font-size:13px} a{color:#1d5fbf}
+.card{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c);border-radius:12px;padding:12px 14px;margin:10px 0}
+.card header{display:flex;justify-content:space-between;gap:8px;align-items:center} .card h3{margin:0;font-size:19px}
+.badge{background:var(--c);color:#fff;font-weight:700;font-size:13px;padding:4px 10px;border-radius:8px}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-size:13px;margin-top:8px}
+.facts div{background:var(--bg);border-radius:8px;padding:6px 8px} .facts span{display:block;color:var(--muted);font-size:11px}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px} table{border-collapse:collapse;width:100%;font-size:13px;background:var(--card)}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap} th{color:var(--muted)}
+.up{color:var(--up)} .dn{color:var(--dn)}
+</style></head><body><main><h1>Backtest results</h1>
+<p class="hint">Run Oct 14, 2026 in 1 min &middot; <a href="index.html">Latest scan</a></p>
+<div>
+<p class="hint">564 stocks (sp500,tsx60,djia), 2022-08-23 to 2026-10-08. 2541 breakouts passed the hard rules;
+83% held the next day; 1316 became trades. Entry at the next open inside the buy zone, hard stop
+(filled at the open if it gaps through), half sold at the target, the rest trailed by 2 ATR, 15-day time stop,
+0.1% slippage each side. R = profit divided by the initial risk per share; average R above 0 means the rules made money.</p>
+<h2>Does the scorecard work?</h2><div class="wrap"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Group</th>
+      <th>Trades</th>
+      <th>WinRate</th>
+      <th>AvgR</th>
+      <th>AvgWinR</th>
+      <th>AvgLossR</th>
+      <th>ProfitFactor</th>
+      <th>TotalR</th>
+      <th>AvgPnLPct</th>
+      <th>AvgDays</th>
+      <th>TargetHit</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>All trades</td>
+      <td>1316</td>
+      <td>46.7</td>
+      <td>0.015</td>
+      <td>0.89</td>
+      <td>-0.75</td>
+      <td>1.04</td>
+      <td>19.6</td>
+      <td>0.03</td>
+      <td>11.5</td>
+      <td>47.0</td>
+    </tr>
+    <tr>
+      <td>Gate pass = would be a Buy</td>
+      <td>45</td>
+      <td>48.9</td>
+      <td>0.020</td>
+      <td>0.97</td>
+      <td>-0.89</td>
+      <td>1.04</td>
+      <td>0.9</td>
+      <td>0.32</td>
+      <td>16.5</td>
+      <td>8.9</td>
+    </tr>
+    <tr>
+      <td>Gate fail</td>
+      <td>1271</td>
+      <td>46.6</td>
+      <td>0.015</td>
+      <td>0.89</td>
+      <td>-0.75</td>
+      <td>1.04</td>
+      <td>18.7</td>
+      <td>0.02</td>
+      <td>11.3</td>
+      <td>48.4</td>
+    </tr>
+    <tr>
+      <td>Score Under 65</td>
+      <td>794</td>
+      <td>46.9</td>
+      <td>-0.059</td>
+      <td>0.62</td>
+      <td>-0.66</td>
+      <td>0.83</td>
+      <td>-47.0</td>
+      <td>-0.23</td>
+      <td>8.4</td>
+      <td>63.7</td>
+    </tr>
+    <tr>
+      <td>Score 65-79</td>
+      <td>470</td>
+      <td>46.0</td>
+      <td>0.134</td>
+      <td>1.34</td>
+      <td>-0.89</td>
+      <td>1.28</td>
+      <td>63.1</td>
+      <td>0.42</td>
+      <td>16.1</td>
+      <td>23.0</td>
+    </tr>
+    <tr>
+      <td>Score 80+</td>
+      <td>52</td>
+      <td>50.0</td>
+      <td>0.066</td>
+      <td>0.96</td>
+      <td>-0.83</td>
+      <td>1.16</td>
+      <td>3.4</td>
+      <td>0.41</td>
+      <td>17.1</td>
+      <td>9.6</td>
+    </tr>
+  </tbody>
+</table></div>
+<h2>By setup type</h2><div class="wrap"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Group</th>
+      <th>Trades</th>
+      <th>WinRate</th>
+      <th>AvgR</th>
+      <th>AvgWinR</th>
+      <th>AvgLossR</th>
+      <th>ProfitFactor</th>
+      <th>TotalR</th>
+      <th>AvgPnLPct</th>
+      <th>AvgDays</th>
+      <th>TargetHit</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Bottoming</td>
+      <td>375</td>
+      <td>52.3</td>
+      <td>-0.012</td>
+      <td>0.62</td>
+      <td>-0.70</td>
+      <td>0.97</td>
+      <td>-4.3</td>
+      <td>-0.01</td>
+      <td>8.7</td>
+      <td>63.5</td>
+    </tr>
+    <tr>
+      <td>Continuation</td>
+      <td>609</td>
+      <td>44.8</td>
+      <td>0.089</td>
+      <td>1.20</td>
+      <td>-0.82</td>
+      <td>1.20</td>
+      <td>54.1</td>
+      <td>0.27</td>
+      <td>14.5</td>
+      <td>30.2</td>
+    </tr>
+    <tr>
+      <td>Other</td>
+      <td>332</td>
+      <td>43.7</td>
+      <td>-0.091</td>
+      <td>0.66</td>
+      <td>-0.67</td>
+      <td>0.76</td>
+      <td>-30.2</td>
+      <td>-0.37</td>
+      <td>9.2</td>
+      <td>59.3</td>
+    </tr>
+  </tbody>
+</table></div>
+<h2>By pattern</h2><div class="wrap"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Group</th>
+      <th>Trades</th>
+      <th>WinRate</th>
+      <th>AvgR</th>
+      <th>AvgWinR</th>
+      <th>AvgLossR</th>
+      <th>ProfitFactor</th>
+      <th>TotalR</th>
+      <th>AvgPnLPct</th>
+      <th>AvgDays</th>
+      <th>TargetHit</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Ascending triangle</td>
+      <td>496</td>
+      <td>46.4</td>
+      <td>0.117</td>
+      <td>1.18</td>
+      <td>-0.80</td>
+      <td>1.27</td>
+      <td>57.9</td>
+      <td>0.39</td>
+      <td>14.8</td>
+      <td>32.7</td>
+    </tr>
+    <tr>
+      <td>Ascending triangle off a low</td>
+      <td>68</td>
+      <td>54.4</td>
+      <td>-0.059</td>
+      <td>0.54</td>
+      <td>-0.77</td>
+      <td>0.83</td>
+      <td>-4.0</td>
+      <td>-0.05</td>
+      <td>9.2</td>
+      <td>64.7</td>
+    </tr>
+    <tr>
+      <td>Bull flag</td>
+      <td>18</td>
+      <td>22.2</td>
+      <td>-0.457</td>
+      <td>0.64</td>
+      <td>-0.77</td>
+      <td>0.24</td>
+      <td>-8.2</td>
+      <td>-2.32</td>
+      <td>10.6</td>
+      <td>16.7</td>
+    </tr>
+    <tr>
+      <td>Double bottom -&gt; breakout</td>
+      <td>146</td>
+      <td>52.1</td>
+      <td>-0.055</td>
+      <td>0.56</td>
+      <td>-0.72</td>
+      <td>0.84</td>
+      <td>-8.0</td>
+      <td>-0.29</td>
+      <td>8.5</td>
+      <td>62.3</td>
+    </tr>
+    <tr>
+      <td>Flat base after drop -&gt; breakout</td>
+      <td>100</td>
+      <td>48.0</td>
+      <td>0.015</td>
+      <td>0.76</td>
+      <td>-0.67</td>
+      <td>1.04</td>
+      <td>1.5</td>
+      <td>0.10</td>
+      <td>8.9</td>
+      <td>62.0</td>
+    </tr>
+    <tr>
+      <td>Flat-top breakout</td>
+      <td>427</td>
+      <td>43.1</td>
+      <td>-0.060</td>
+      <td>0.82</td>
+      <td>-0.72</td>
+      <td>0.85</td>
+      <td>-25.8</td>
+      <td>-0.26</td>
+      <td>10.0</td>
+      <td>50.6</td>
+    </tr>
+    <tr>
+      <td>Rounded bottom -&gt; breakout</td>
+      <td>61</td>
+      <td>57.4</td>
+      <td>0.101</td>
+      <td>0.65</td>
+      <td>-0.64</td>
+      <td>1.37</td>
+      <td>6.1</td>
+      <td>0.52</td>
+      <td>8.6</td>
+      <td>67.2</td>
+    </tr>
+  </tbody>
+</table></div>
+<h2>By breakout volume</h2><div class="wrap"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Group</th>
+      <th>Trades</th>
+      <th>WinRate</th>
+      <th>AvgR</th>
+      <th>AvgWinR</th>
+      <th>AvgLossR</th>
+      <th>ProfitFactor</th>
+      <th>TotalR</th>
+      <th>AvgPnLPct</th>
+      <th>AvgDays</th>
+      <th>TargetHit</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1.5-2x</td>
+      <td>869</td>
+      <td>45.3</td>
+      <td>0.002</td>
+      <td>0.91</td>
+      <td>-0.75</td>
+      <td>1.00</td>
+      <td>1.8</td>
+      <td>-0.03</td>
+      <td>11.1</td>
+      <td>46.8</td>
+    </tr>
+    <tr>
+      <td>2-3x</td>
+      <td>356</td>
+      <td>48.9</td>
+      <td>0.024</td>
+      <td>0.82</td>
+      <td>-0.74</td>
+      <td>1.06</td>
+      <td>8.6</td>
+      <td>0.10</td>
+      <td>12.2</td>
+      <td>47.8</td>
+    </tr>
+    <tr>
+      <td>3x+</td>
+      <td>91</td>
+      <td>50.5</td>
+      <td>0.101</td>
+      <td>0.95</td>
+      <td>-0.77</td>
+      <td>1.27</td>
+      <td>9.2</td>
+      <td>0.31</td>
+      <td>12.1</td>
+      <td>46.2</td>
+    </tr>
+  </tbody>
+</table></div>
+<h2>By reward:risk at the signal</h2><div class="wrap"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Group</th>
+      <th>Trades</th>
+      <th>WinRate</th>
+      <th>AvgR</th>
+      <th>AvgWinR</th>
+      <th>AvgLossR</th>
+      <th>ProfitFactor</th>
+      <th>TotalR</th>
+      <th>AvgPnLPct</th>
+      <th>AvgDays</th>
+      <th>TargetHit</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Under 2</td>
+      <td>797</td>
+      <td>47.9</td>
+      <td>-0.058</td>
+      <td>0.59</td>
+      <td>-0.65</td>
+      <td>0.83</td>
+      <td>-46.3</td>
+      <td>-0.23</td>
+      <td>8.2</td>
+      <td>66.6</td>
+    </tr>
+    <tr>
+      <td>2+</td>
+      <td>519</td>
+      <td>44.7</td>
+      <td>0.127</td>
+      <td>1.39</td>
+      <td>-0.89</td>
+      <td>1.26</td>
+      <td>65.8</td>
+      <td>0.43</td>
+      <td>16.5</td>
+      <td>17.0</td>
+    </tr>
+  </tbody>
+</table></div>
+<h2>By warnings</h2><div class="wrap"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Group</th>
+      <th>Trades</th>
+      <th>WinRate</th>
+      <th>AvgR</th>
+      <th>AvgWinR</th>
+      <th>AvgLossR</th>
+      <th>ProfitFactor</th>
+      <th>TotalR</th>
+      <th>AvgPnLPct</th>
+      <th>AvgDays</th>
+      <th>TargetHit</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0-1</td>
+      <td>115</td>
+      <td>44.3</td>
+      <td>0.149</td>
+      <td>1.42</td>
+      <td>-0.86</td>
+      <td>1.31</td>
+      <td>17.1</td>
+      <td>0.41</td>
+      <td>17.3</td>
+      <td>20.9</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>295</td>
+      <td>42.7</td>
+      <td>0.034</td>
+      <td>1.12</td>
+      <td>-0.78</td>
+      <td>1.08</td>
+      <td>10.0</td>
+      <td>0.10</td>
+      <td>13.0</td>
+      <td>33.6</td>
+    </tr>
+    <tr>
+      <td>3+</td>
+      <td>906</td>
+      <td>48.2</td>
+      <td>-0.008</td>
+      <td>0.76</td>
+      <td>-0.73</td>
+      <td>0.98</td>
+      <td>-7.6</td>
+      <td>-0.04</td>
+      <td>10.3</td>
+      <td>54.7</td>
+    </tr>
+  </tbody>
+</table></div>
+<h2>By market</h2><div class="wrap"><table class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th>Group</th>
+      <th>Trades</th>
+      <th>WinRate</th>
+      <th>AvgR</th>
+      <th>AvgWinR</th>
+      <th>AvgLossR</th>
+      <th>ProfitFactor</th>
+      <th>TotalR</th>
+      <th>AvgPnLPct</th>
+      <th>AvgDays</th>
+      <th>TargetHit</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>US</td>
+      <td>1144</td>
+      <td>46.9</td>
+      <td>0.027</td>
+      <td>0.90</td>
+      <td>-0.75</td>
+      <td>1.07</td>
+      <td>30.7</td>
+      <td>0.07</td>
+      <td>11.4</td>
+      <td>47.5</td>
+    </tr>
+    <tr>
+      <td>Canada</td>
+      <td>172</td>
+      <td>44.8</td>
+      <td>-0.065</td>
+      <td>0.79</td>
+      <td>-0.75</td>
+      <td>0.84</td>
+      <td>-11.1</td>
+      <td>-0.24</td>
+      <td>12.0</td>
+      <td>44.2</td>
+    </tr>
+  </tbody>
+</table></div>
+<h2>How to read this</h2>
+<ul class="hint"><li>Look at <b>AvgR</b> (expectancy per trade, in units of risk) and <b>ProfitFactor</b> (gross wins / gross losses).
+Above 0 and above 1.0 respectively means an edge; the Gate-pass row should beat the Gate-fail row if the scorecard helps.</li>
+<li>Small groups (under ~30 trades) are noise.</li>
+<li>Limits: today's index members only (survivorship bias flatters results), no sector or earnings data in history
+(those score neutral), daily bars only (no intraday VWAP check), no commissions beyond slippage.</li></ul></div></main></body></html>
