@@ -2,11 +2,21 @@ name: Daily breakout scan
 
 on:
   schedule:
-    # Weekdays 22:00 UTC = 6:00 pm ET in summer (EDT), 5:00 pm ET in winter (EST),
-    # after the close so the day's candle and volume are final.
-    # GitHub sometimes starts scheduled jobs 5-30 min late.
+    # Evening scan: weekdays 22:00 UTC = 6 pm ET (summer) / 5 pm ET (winter), after the close.
     - cron: "0 22 * * 1-5"
-  workflow_dispatch: {}   # lets you start a scan any time from the Actions tab
+    # Morning check: 14:15 and 15:15 UTC. The script only works between 9:50 and 11:30 ET,
+    # so in summer it runs at 10:15 and 11:15 ET, in winter at 10:15 ET.
+    - cron: "15 14 * * 1-5"
+    - cron: "15 15 * * 1-5"
+    # Backtest: Saturdays 12:00 UTC.
+    - cron: "0 12 * * 6"
+  workflow_dispatch:      # start any mode by hand from the Actions tab
+    inputs:
+      mode:
+        description: "What to run"
+        type: choice
+        options: [scan, morning, backtest]
+        default: scan
 
 permissions:
   contents: write
@@ -20,7 +30,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
@@ -35,11 +45,32 @@ jobs:
       - name: Install
         run: pip install -r requirements.txt
 
+      - name: Pick mode
+        id: mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then m="${{ inputs.mode }}"
+          elif [ "${{ github.event.schedule }}" = "0 12 * * 6" ]; then m=backtest
+          elif [ "${{ github.event.schedule }}" = "0 22 * * 1-5" ]; then m=scan
+          else m=morning; fi
+          echo "mode=$m" >> "$GITHUB_OUTPUT"
+          echo "Mode: $m"
+
       - name: Self-test
         run: python breakout_scanner.py --selftest
 
-      - name: Scan all six indexes
+      - name: Evening scan (all six indexes)
+        if: steps.mode.outputs.mode == 'scan'
         run: python breakout_scanner.py --outdir reports
+
+      - name: Morning check
+        if: steps.mode.outputs.mode == 'morning'
+        env:
+          FORCE_MORNING: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
+        run: python breakout_scanner.py --outdir reports --morning
+
+      - name: Backtest (5 years, S&P 500 + TSX 60 + Dow)
+        if: steps.mode.outputs.mode == 'backtest'
+        run: python breakout_scanner.py --outdir reports --backtest
 
       - name: Build report site
         run: |
@@ -59,7 +90,8 @@ jobs:
           git config user.name "breakout-bot"
           git config user.email "breakout-bot@users.noreply.github.com"
           git add reports
-          git commit -m "Scan $(date -u +%F)" || echo "Nothing new to commit"
+          git commit -m "${{ steps.mode.outputs.mode }} $(date -u +%F)" || echo "Nothing new to commit"
+          git pull --rebase origin main || true
           git push
 
       - uses: actions/configure-pages@v5
