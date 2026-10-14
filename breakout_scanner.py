@@ -1179,7 +1179,7 @@ def market_review(data, tickers, n_setups=None, live=False):
             ch = (c - d["Close"].iloc[-2]) * 100
             tds = f'<td class="{"dn" if ch >= 0 else "up"}">{ch:+.0f} bp</td>' + "".join("<td>-</td>" for _ in range(3))
         else:
-            c_txt = _f(c)
+            c_txt = f"{c:.4f}" if t.endswith("=X") else _f(c)
         trend = ""
         if pct and pd.notna(d["SMA200"].iloc[-1]):
             s50, s200 = d["SMA50"].iloc[-1], d["SMA200"].iloc[-1]
@@ -1220,7 +1220,9 @@ def market_review(data, tickers, n_setups=None, live=False):
     if spy is not None and len(spy) > 22:
         d1, d21 = _chg(spy, 1), _chg(spy, 21)
         above = "above" if spy["Close"].iloc[-1] > spy["SMA50"].iloc[-1] else "below"
-        txt = (f"The S&P 500 {'is ' + ('up' if d1 >= 0 else 'down') + f' {abs(d1):.1f}% so far today' if live else ('rose' if d1 >= 0 else 'fell') + f' {abs(d1):.1f}%'}"
+        move = ("is flat so far today" if live else "was flat") if abs(d1) < 0.05 else \
+            (f"is {'up' if d1 >= 0 else 'down'} {abs(d1):.1f}% so far today" if live else f"{'rose' if d1 >= 0 else 'fell'} {abs(d1):.1f}%")
+        txt = (f"The S&P 500 {move}"
                f" and is {d21:+.1f}% over the past month, {above} its 50-day average ({st_us['Trend'].lower()}).")
         q, iwm = data.get("QQQ"), data.get("IWM")
         if q is not None and iwm is not None and len(q) > 22 and len(iwm) > 22:
