@@ -1505,13 +1505,28 @@ def morning_check(outdir, force=False):
         return 0
     rows = [r for r in load_tracker(os.path.join(outdir, "tracker.csv"))
             if not r["Closed"] and r["Status"] in ("BUY", "EXTENDED", "WATCH", "HOLD", "TRAIL", "TAKE PROFIT")]
-    intr = _intraday(sorted({r["Ticker"] for r in rows}))
+    demo = False
+    if not rows and force:
+        scans = sorted(f for f in os.listdir(outdir) if f.startswith("breakouts_") and f.endswith(".csv"))
+        if scans:
+            sc = pd.read_csv(os.path.join(outdir, scans[-1]))
+            rows = [dict(Ticker=x.Ticker, Status="WATCH", Resistance=x.Resistance, Stop=x.Stop, Closed=False)
+                    for x in sc.head(8).itertuples()]
+            demo = True
+    try:
+        intr = _intraday(sorted({r["Ticker"] for r in rows}))
+    except Exception as e:
+        print("Intraday download failed:", e)
+        intr = {}
     cards = []
     order = {"ENTER": 0, "STOPPED": 1, "WAIT": 2, "SKIP": 3, "FAILING": 4, "HOLDING": 5, "OK": 6}
     items = []
     for r in rows:
         d = intr.get(r["Ticker"])
-        x = intraday_stats(d) if d is not None else None
+        try:
+            x = intraday_stats(d) if d is not None else None
+        except Exception:
+            x = None
         if x is None:
             items.append((9, r, None, ("NO DATA", "#6b6b6b", "No intraday data yet.")))
             continue
@@ -1540,6 +1555,7 @@ def morning_check(outdir, force=False):
 <p class="hint">Checks last night's Buy, Don't-chase, Watch and open positions against today's session: price vs the
 day's VWAP and its direction, volume compared with the same time on the last 10 days, and the buy zone.
 US quotes are near real-time; TSX quotes can be delayed about 15 minutes. Re-check your broker before acting.</p>
+{'<p class="hint"><b>Test run:</b> nothing is being tracked, so this checks the latest scan candidates instead.</p>' if demo else ''}
 {''.join(cards) or '<p class="hint">Nothing to check this morning.</p>'}
 <p class="hint">Technical screen only - not investment advice.</p>
 </main></body></html>"""
