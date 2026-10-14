@@ -1,7 +1,7 @@
-Ticker,Indexes,Category,Pattern,Score,BreakoutDate,BaseStart,Resistance,BaseLow,ATR,VolX,Flags,Status,StatusSince,Stop,Target,EntryDate,EntryPrice,LastClose,HighClose,PnLPct,LastDate,Note,Closed
-VEON,Nasdaq Composite,Continuation,Bull flag,66.2,2026-10-12,2026-10-05,78.44,74.93,3.06,1.55,volume < 2x,BUY,2026-10-13,75.38,91.82,2026-10-13,80.86,80.86,80.86,,2026-10-13,Broke out and held the next day,False
-ERIC,Nasdaq Composite,Other,Flat-top breakout,59.2,2026-10-13,2026-09-23,9.68,9.04,0.17,2.19,no clear trend/bottom context,WATCH,2026-10-13,,,,,9.71,,,2026-10-13,Broke out on 2.19x volume,False
-FIZZ,Nasdaq Composite,Other,Ascending triangle,56.2,2026-10-12,2026-09-24,31.07,29.07,0.83,1.81,no clear trend/bottom context; volume < 2x,EXTENDED,2026-10-13,,,,,32.99,,,2026-10-13,Breakout held but closed 6.18% above the level,False
-TVK.TO,S&P/TSX Composite,Bottoming,Flat base after drop -> breakout,54.2,2026-10-13,2026-10-07,111.51,106.06,3.35,1.67,volume < 2x,WATCH,2026-10-13,,,,,117.08,,,2026-10-13,Broke out on 1.67x volume,False
-GFR,NYSE-listed (R2000 proxy),Other,Flat-top breakout,51.7,2026-10-13,2026-10-07,6.51,6.14,0.26,2.24,no clear trend/bottom context,WATCH,2026-10-13,,,,,6.78,,,2026-10-13,Broke out on 2.24x volume,False
-NFI.TO,S&P/TSX Composite,Other,Ascending triangle,51.1,2026-10-13,2026-08-14,25.75,21.99,0.75,1.51,no clear trend/bottom context; volume < 2x,WATCH,2026-10-13,,,,,26.28,,,2026-10-13,Broke out on 1.51x volume,False
+Ticker,Indexes,Category,Pattern,Score,BreakoutDate,BaseStart,Resistance,BaseLow,ATR,VolX,BaseLen,Flags,Status,StatusSince,Stop,Target,EntryDate,EntryPrice,LastClose,HighClose,PnLPct,LastDate,Note,Closed
+VEON,Nasdaq Composite,Continuation,Bull flag,66.2,2026-10-12,2026-10-05,78.44,74.93,3.06,1.55,5,volume < 2x,BUY,2026-10-13,75.38,91.82,2026-10-13,80.86,80.86,80.86,,2026-10-13,Broke out and held the next day,False
+ERIC,Nasdaq Composite,Other,Flat-top breakout,59.2,2026-10-13,2026-09-23,9.68,9.04,0.17,2.19,14,no clear trend/bottom context,WATCH,2026-10-13,,,,,9.71,,,2026-10-13,Broke out on 2.19x volume,False
+FIZZ,Nasdaq Composite,Other,Ascending triangle,56.2,2026-10-12,2026-09-24,31.07,29.07,0.83,1.81,12,no clear trend/bottom context; volume < 2x,EXTENDED,2026-10-13,,,,,32.99,,,2026-10-13,Breakout held but closed 6.18% above the level,False
+TVK.TO,S&P/TSX Composite,Bottoming,Flat base after drop -> breakout,54.2,2026-10-13,2026-10-07,111.51,106.06,3.35,1.67,3,volume < 2x,WATCH,2026-10-13,,,,,117.08,,,2026-10-13,Broke out on 1.67x volume,False
+GFR,NYSE-listed (R2000 proxy),Other,Flat-top breakout,51.7,2026-10-13,2026-10-07,6.51,6.14,0.26,2.24,4,no clear trend/bottom context,WATCH,2026-10-13,,,,,6.78,,,2026-10-13,Broke out on 2.24x volume,False
+NFI.TO,S&P/TSX Composite,Other,Ascending triangle,51.1,2026-10-13,2026-08-14,25.75,21.99,0.75,1.51,40,no clear trend/bottom context; volume < 2x,WATCH,2026-10-13,,,,,26.28,,,2026-10-13,Broke out on 1.51x volume,False

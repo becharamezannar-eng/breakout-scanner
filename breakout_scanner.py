@@ -536,7 +536,7 @@ TRADE = dict(
 )
 
 TRACK_COLS = ["Ticker", "Indexes", "Category", "Pattern", "Score", "BreakoutDate", "BaseStart",
-              "Resistance", "BaseLow", "ATR", "VolX", "Flags", "Status", "StatusSince", "Stop", "Target",
+              "Resistance", "BaseLow", "ATR", "VolX", "BaseLen", "Flags", "Status", "StatusSince", "Stop", "Target",
               "EntryDate", "EntryPrice", "LastClose", "HighClose", "PnLPct", "LastDate", "Note", "Closed"]
 ACTIVE = {"WATCH", "BUY", "EXTENDED", "HOLD", "TAKE PROFIT", "TRAIL"}
 
@@ -651,7 +651,7 @@ def update_tracker(rows, res, data, asof):
             continue
         row = {k: np.nan for k in TRACK_COLS}
         row.update({k: r[k] for k in ["Ticker", "Indexes", "Category", "Pattern", "Score", "BreakoutDate",
-                                      "BaseStart", "Resistance", "BaseLow", "ATR", "VolX", "Flags"]})
+                                      "BaseStart", "Resistance", "BaseLow", "ATR", "VolX", "BaseLen", "Flags"]})
         row.update(LastClose=r["Close"], LastDate=asof, Closed=False)
         if r["Status"].startswith("Fresh"):
             _set(row, "WATCH", asof, f"Broke out on {r['VolX']}x volume")
@@ -775,7 +775,7 @@ def card_html(r, chart=None, compact=False):
     flag_html = "".join(f'<span class="flag">{f}</span>' for f in flags)
     chart_html = (f'<details><summary>Chart</summary><img alt="{r["Ticker"]} chart" '
                   f'src="data:image/png;base64,{chart}"/></details>') if chart else ""
-    return f"""<article class="card" style="--c:{color}">
+    return f"""<article class="card" id="t-{r['Ticker']}" style="--c:{color}">
   <header><div><h3>{r['Ticker']}</h3><p class="sub">{r['Pattern']} &middot; {r['Indexes']}</p></div>
   <div class="right"><span class="badge">{label}{' &middot; new' if new else ''}</span><p class="px">{_f(r['LastClose'])}</p></div></header>
   <p class="do">{instruction(r)}</p>
@@ -829,6 +829,26 @@ def write_html(path, asof, rows, res, data, ctx, n_scanned):
     closed_sec = (f'<section><h2>Closed in the last 3 weeks</h2><div class="wrap"><table><tr><th>Ticker</th><th>Result</th>'
                   f'<th>Date</th><th>P&amp;L</th><th>Why</th></tr>{closed_html}</table></div></section>') if closed else ""
 
+    def sum_row(r):
+        label, color, _ = STATUS_INFO.get(r["Status"], (r["Status"], "#555", ""))
+        above = (r["LastClose"] / r["Resistance"] - 1) * 100
+        base = "-" if pd.isna(r.get("BaseLen")) else f"{int(r['BaseLen'])} days"
+        pnl = r.get("PnLPct")
+        pnl_td = "<td>-</td>" if pnl is None or pd.isna(pnl) else f'<td class="{"up" if pnl >= 0 else "dn"}">{pnl:+.1f}%</td>'
+        return (f'<tr><td class="tk"><a href="#t-{r["Ticker"]}">{r["Ticker"]}</a></td>'
+                f'<td><span class="chip" style="--c:{color}">{label}</span></td>'
+                f'<td>{r["Pattern"]}</td><td>{r["Category"]}</td><td>{_f(r["LastClose"])}</td>'
+                f'<td>{_f(r["Resistance"])}</td><td>{above:+.1f}%</td><td>{r["VolX"]}x</td><td>{base}</td>'
+                f'<td>{_f(r.get("Stop"))}</td><td>{_f(r.get("Target"))}</td>{pnl_td}'
+                f'<td>{r["BreakoutDate"]}</td><td>{_f(r["Score"], 0)}</td><td>{r["Indexes"]}</td></tr>')
+
+    summary = ("<section><h2>Summary</h2><p class=\"hint\">Every setup being tracked. Tap a ticker for its card and chart; "
+               "swipe the table sideways for more columns.</p><div class=\"wrap\"><table class=\"sum\"><tr>"
+               "<th class=\"tk\">Ticker</th><th>Action</th><th>Pattern</th><th>Type</th><th>Close</th>"
+               "<th>Breakout level</th><th>Above level</th><th>Volume</th><th>Base</th><th>Stop</th><th>Target</th>"
+               "<th>P&amp;L</th><th>Breakout date</th><th>Score</th><th>Index</th></tr>"
+               + "".join(sum_row(r) for r in act) + "</table></div></section>") if act else ""
+
     cols = ["Ticker", "Score", "Category", "Pattern", "Status", "Close", "Resistance", "PctAboveRes", "VolX",
             "RangeATR", "UpperWickPct", "BaseLen", "BaseDepthPct", "Touches", "ResTests120d", "HigherLows",
             "VolRisingInBase", "Flags"]
@@ -862,7 +882,9 @@ h1{{font-size:22px;margin:4px 0 2px}} h2{{font-size:17px;margin:26px 0 2px}} h3{
 .facts div{{background:var(--bg);border-radius:8px;padding:6px 8px}} .facts span{{display:block;color:var(--muted);font-size:11px}}
 .flags{{margin-top:8px}} .flag{{display:inline-block;font-size:12px;color:#a15c00;background:#a15c0018;border-radius:6px;padding:2px 8px;margin:2px 4px 0 0}}
 details{{margin-top:10px}} summary{{cursor:pointer;color:var(--muted);font-size:13px}} details img{{width:100%;border-radius:8px;margin-top:8px}}
-.wrap{{overflow-x:auto}} table{{border-collapse:collapse;font-size:12px;width:100%;background:var(--card)}}
+.wrap{{overflow-x:auto;border:1px solid var(--line);border-radius:10px}}
+table.sum td,table.sum th{{font-size:13px;padding:8px}} table.sum .chip{{font-size:11px;padding:2px 8px}}
+.tk{{position:sticky;left:0;background:var(--card);z-index:1}} .tk a{{color:var(--ink);font-weight:700}} table{{border-collapse:collapse;font-size:12px;width:100%;background:var(--card)}}
 th,td{{padding:6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}} th{{color:var(--muted);font-weight:600}}
 ul.gl{{list-style:none;padding:0;font-size:13px}} ul.gl li{{margin:8px 0}}
 footer{{color:var(--muted);font-size:12px;margin:30px 0 10px}}
@@ -871,6 +893,7 @@ footer{{color:var(--muted);font-size:12px;margin:30px 0 10px}}
 <p class="hint">Based on the close of <b>{asof_txt}</b> &middot; {n_scanned:,} stocks scanned &middot; {len(res)} new setups</p>
 <div class="chips">{chips}</div>
 <div class="mkts">{mkt}</div>
+{summary}
 {section("Act at tomorrow's open", "New buys, profit-taking and exits.", do_now, empty="No action needed tomorrow.")}
 {section("Watchlist", "Broke out but not confirmed yet, or too far above the breakout level to buy.", watch, empty="Nothing on watch.")}
 {section("Open positions", "Setups that triggered a Buy and are still running.", holding, compact=True, empty="No open positions.")}
