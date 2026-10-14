@@ -1801,11 +1801,11 @@ def _tracker_selftest():
                                 (R * 1.1, R * 1.1, R * 1.0, R * 1.02)],
          ["WATCH", "BUY", "HOLD", "TAKE PROFIT", "TRAIL", "SELL"]),
     ]
-    low = pd.DataFrame([dict(r, Score=70.0, Grade="B")])
+    low = pd.DataFrame([dict(r, Score=62.0, Grade="B")])
     hold = (R * 1.01, R * 1.02, R * 0.999, R * 1.015)
-    cases.append(("score 70: watch only", [hold] * 6, ["WATCH"] * 6 + ["DROP"]))
+    cases.append(("score 62: watch only", [hold] * 6, ["WATCH"] * 6 + ["DROP"]))
     for name, bars, want in cases:
-        seq, last = run(bars, low if name.startswith("score 70") else res)
+        seq, last = run(bars, low if name.startswith("score 62") else res)
         good = seq == want
         ok &= good
         print(f"tracker : {name:<20} {' > '.join(seq)}" + ("" if good else f"   EXPECTED {' > '.join(want)}"))
