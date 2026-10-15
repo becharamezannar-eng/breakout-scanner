@@ -958,7 +958,7 @@ def enrich(r, d, A, ctx):
               + 1.5 * r["RangeContraction"]
               + (1.5 if np.isfinite(dry) and dry < 0.85 else 0.75 if np.isfinite(dry) and dry < 1 else 0)
               + (1 if r["UpDownVol"] >= 1.2 else 0) + (1 if r["Category"] == "Bottoming" else 0)
-              + 1 * r["Squeeze"]                                        # [Murphy ch9] Bollinger squeeze
+              # [Murphy ch9] Bollinger squeeze is reported but not scored: tested, +0.21R vs +0.24R without
               + (1 if r["BaseLen"] >= 15 else 0))                       # [Murphy ch5, ch11] bigger base
     p_base = min(10, p_base)
     p_rs = ((4 * np.clip(rs20 / 10, 0, 1) if np.isfinite(rs20) else 2)
@@ -973,7 +973,10 @@ def enrich(r, d, A, ctx):
     p_vwap = (2 * r["AboveAVWAPBase"] + 1 * r["AboveAVWAP52wLow"]
               + (1 if np.isfinite(ev) and ev <= 2.5 else 0) + 2 * r["Structure"]
               + 2 * r["WeeklyOK"]                                       # [Murphy ch8-10; Douglas ch11]
-              + (1 if r["ADXTurnUp"] or (r["DIBull"] and not r["ADXTiring"]) else 0)  # [Murphy ch15]
+              # [Murphy ch15] +DI over -DI and ADX not rolling over from 40+. The "ADX turning up from
+              # below 20" bonus was tested and removed: in the 2022-26 backtest those breakouts averaged
+              # +0.06R vs +0.29R (trendless stocks broke out poorly).
+              + (1 if r["DIBull"] and not r["ADXTiring"] else 0)
               + (1 if r["AboveCloud"] and r["TKBull"] else 0))          # [Allemann ch12] Ichimoku
     p_vwap = min(10, p_vwap)
     rr = r["RR"]
@@ -2260,6 +2263,9 @@ EXIT_VARIANTS = {
               fail=True, be=True, trail="target"),
     # D: Hougaard - no profit target, trail everything once +1R is reached
     "D": dict(name="No target: trail all after +1R", scale=[], fail=True, be=True, trail="1R"),
+    # E/F split B to see which of its two rules helps
+    "E": dict(name="A + failed-breakout exit only", scale=[(0.5, "target")], fail=True, be=False, trail="target"),
+    "F": dict(name="A + breakeven at +1R only", scale=[(0.5, "target")], fail=False, be=True, trail="target"),
 }
 
 
