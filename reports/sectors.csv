@@ -1,9 +1,37 @@
 Ticker,Sector,Industry
 ACI,Consumer Defensive,Grocery Stores
+AJG,Financial Services,Insurance Brokers
+APPF,Technology,Software - Application
+BLKB,Technology,Software - Application
+CBLL,Healthcare,Medical Devices
+CON,Healthcare,Medical Care Facilities
 CTC-A.TO,Consumer Cyclical,Specialty Retail
+EBAY,Consumer Cyclical,Internet Retail
 ERIC,Technology,
+EXLS,Technology,Information Technology Services
+EXPD,Industrials,Integrated Freight & Logistics
+FFH.TO,Financial Services,Insurance - Property & Casualty
 FIZZ,Consumer Defensive,
+GCT,Technology,Software - Infrastructure
 GFR,Energy,Oil & Gas E&P
+GIB-A.TO,Technology,Information Technology Services
+IP,Consumer Cyclical,Packaging & Containers
+KXS.TO,Technology,Software - Application
+L.TO,Consumer Defensive,Grocery Stores
+LEVI,Consumer Cyclical,Apparel Manufacturing
+LXU,Basic Materials,Chemicals
+M,Consumer Cyclical,Department Stores
+MA,Financial Services,Credit Services
+MYI,Financial Services,Asset Management
 NOC,Industrials,Aerospace & Defense
+PACS,Healthcare,Medical Care Facilities
+POOL,Industrials,Industrial Distribution
+THO,Consumer Cyclical,Recreational Vehicles
 TVK.TO,Energy,
+ULS,Industrials,Specialty Business Services
 VEON,Communication Services,
+W,Consumer Cyclical,Internet Retail
+WAY,Healthcare,Health Information Services
+WCN,Industrials,Waste Management
+WCN.TO,Industrials,Waste Management
+WMG,Communication Services,Entertainment
