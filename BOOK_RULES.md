@@ -96,3 +96,23 @@ Books:
 | Gold/silver ratio ≥ 80 and turning down = silver/metals outperformance phase | K ch32 | ADDED to market review; context flag for precious-metal miners |
 | Silver outperforms gold in bull markets; spikes then long bases | K ch28, ch34 | context only |
 | Seasonality: metals strongest Sep–Feb; summer doldrums Jun–Aug; December tax-loss selling in US/Canadian small caps | K ch35 | ADDED (seasonal warnings) |
+
+## 8. What the backtest said (Aug 2022 - Oct 2026, S&P 500 + TSX 60 + Dow, 1,313 trades, 202 passing the Buy gate)
+| Test | Result (Buy-gate trades, avg R per trade) | Decision |
+|---|---|---|
+| New scorecard vs previous | +0.27R, profit factor 1.59 (previous gate: about +0.19R) | adopted |
+| Exit A - half at target, trail rest (before) | +0.27R, PF 1.59 | baseline |
+| Exit E - A + failed-breakout exit [Murphy ch5; Hougaard] | +0.27R, PF 1.63 | **adopted** (same expectancy, better PF, losers cut early) |
+| Exit F - A + breakeven at +1R [Gann rule 3; Douglas] | +0.24R | rejected (normal pullbacks stop out winners) |
+| Exit C - Douglas thirds | +0.20R | rejected |
+| Exit D - no target, trail all [Hougaard] | +0.24R | rejected |
+| R:R 3:1 instead of 2:1 [Murphy ch16; Douglas] | +0.24R, fewer trades | rejected; 2:1 kept |
+| ADX turning up from below 20 [Murphy ch15] | +0.06R with vs +0.29R without | removed from the score |
+| Bollinger squeeze [Murphy ch9] | +0.21R with vs +0.24R without | reported, not scored |
+| Bearish RSI divergence [Murphy ch10] | +0.18R with vs +0.26R without | warning kept |
+| OBV divergence [Murphy ch7] | +0.16R with vs +0.25R without | warning kept |
+| Score 75+ / 80+ | +0.12R / -0.05R | the score is a pass mark at 70, not a ranking |
+| By year (gate) | 2022 -0.90R (9 trades), 2023 +0.72R, 2024 +0.40R, 2025 -0.04R, 2026 +0.19R | expect losing years |
+
+Limits: today's index members only (survivorship bias), no historical sector/earnings data (scored neutral),
+daily bars only. Groups under ~30 trades are noise.

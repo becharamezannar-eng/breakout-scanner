@@ -1094,6 +1094,12 @@ def enrich(r, d, A, ctx):
         EarnDays=earn_days, Shares=shares, RiskPerShare=round(risk_ps, 2),
         Checklist="".join("-" if ok is None else "1" if bool(ok) else "0" for _, ok in checklist),
         RSLineUp=rs_line_up, Industry=industry, Precious=precious,
+        Signals=" · ".join(lbl for ok, lbl in [
+            (r["WeeklyOK"], "weekly trend up"), (r["New20dHigh"], "new 20-day high"),
+            (r["OBVConfirm"], "OBV confirms"), (rs_line_up, "RS line rising"), (rs_high, "RS line at new high"),
+            (r["AboveCloud"] and r["TKBull"], "above Ichimoku cloud"), (r["Gap"] and v >= 2, "breakaway gap"),
+            (r["Squeeze"], "Bollinger squeeze"), (r["DIBull"], "+DI over -DI"), (r["Clear1Pct"], "cleared level by 1%+")]
+            if ok),
     )
     return r
 
@@ -1175,12 +1181,14 @@ TRADE = dict(
     stop_atr=1.0,         # stop = max(base low, resistance - 1 ATR), at least 1.5% under resistance
     trail_atr=2.0,        # trailing stop after the target: highest close - 2 ATR
     time_stop_days=15,    # sell if no follow-through after 15 sessions
+    fail_days=10,         # failed-breakout exit window after entry [Murphy ch5; Hougaard]
     time_stop_gain=0.02,
 )
 
 TRACK_COLS = ["Ticker", "Indexes", "Sector", "Category", "Pattern", "Score", "Grade", "ScoreParts", "Checklist",
               "Warnings", "NWarn", "Gate", "BreakoutDate", "BaseStart", "Resistance", "BaseLow", "ATR", "VolX",
               "BaseLen", "NextRes", "SupplyZone", "RR", "RS20", "Market", "EarningsDate", "Shares", "RiskPerShare",
+              "GapLow", "Signals",
               "Flags", "Status", "StatusSince", "Stop", "Target", "EntryDate", "EntryPrice", "LastClose",
               "HighClose", "PnLPct", "LastDate", "Note", "Closed"]
 ACTIVE = {"WATCH", "BUY", "EXTENDED", "HOLD", "TAKE PROFIT", "TRAIL"}
@@ -1284,6 +1292,12 @@ def step_row(row, date, o, h, l, c, n_held):
         elif n_held >= TRADE["extended_days"]:
             _set(row, "DROP", date, "Never pulled back - opportunity missed")
     elif st in ("BUY", "HOLD"):
+        if n_held <= TRADE["fail_days"] and c < R * (1 - CFG["hold_tol"]):
+            # [Murphy ch5] a decisive close back through the breakout level = failed pattern;
+            # [Hougaard] a good breakout works right away. Backtest 2022-26: same expectancy, higher profit factor.
+            row["PnLPct"] = round((c / row["EntryPrice"] - 1) * 100, 2)
+            _set(row, "SELL", date, f"Failed breakout: closed back below {R * (1 - CFG['hold_tol']):.2f}")
+            return
         if l <= row["Stop"]:
             fill = min(o, row["Stop"])
             row["PnLPct"] = round((fill / row["EntryPrice"] - 1) * 100, 2)
@@ -1295,6 +1309,8 @@ def step_row(row, date, o, h, l, c, n_held):
             _set(row, "SELL", date, f"Time stop: no follow-through after {n_held} sessions")
         elif st == "BUY":
             _set(row, "HOLD", date, "Breakout working - stop unchanged")
+        if row["Status"] == "HOLD" and np.isfinite(_num(row.get("GapLow"))) and c < _num(row.get("GapLow")):
+            row["Note"] = f"Warning: closed back into the breakaway gap (below {_num(row.get('GapLow')):.2f}) - weakness"
     elif st in ("TAKE PROFIT", "TRAIL"):
         if l <= row["Stop"]:
             fill = min(o, row["Stop"])
@@ -1804,8 +1820,12 @@ def instruction(r):
         return (f"The breakout held, but price is {_pct(r['LastClose'], R)} above the breakout level. "
                 f"Don't chase it. Buy only if it pulls back to <b>{_f(R)}-{_f(R * (1 + TRADE['buy_zone']))}</b> and holds (a retest).")
     if st == "HOLD":
+        addon = _num(r.get("EntryPrice")) + _num(r.get("ATR"))
+        add_txt = (f" Optional add-on (smaller than the first buy, only while winning): above {_f(addon)}."
+                   if np.isfinite(addon) and _num(r.get("LastClose"), 0) < addon else "")
+        note = f" <b>{r['Note']}</b>." if str(r.get("Note", "")).startswith("Warning") else ""
         return (f"In the trade since {r['EntryDate']} at {_f(r['EntryPrice'])} (<b>{r['PnLPct']:+.1f}%</b>). "
-                f"Keep the stop order at <b>{_f(r['Stop'])}</b>; target <b>{_f(r['Target'])}</b>.")
+                f"Keep the stop order at <b>{_f(r['Stop'])}</b>; target <b>{_f(r['Target'])}</b>." + note + add_txt)
     if st == "TAKE PROFIT":
         return (f"Hit the {_f(r['Target'])} target (<b>{r['PnLPct']:+.1f}%</b>). Sell about half. "
                 f"Move the stop on the rest to <b>{_f(r['Stop'])}</b> (your entry), so it can't turn into a loss.")
@@ -1871,7 +1891,10 @@ def card_html(r, chart=None, compact=False):
     detail = ""
     if not compact and grade:
         detail = (f'<details><summary>Scorecard &amp; checklist</summary><div class="sbs">{_score_bars(r.get("ScoreParts"))}</div>'
-                  f'{_checklist_html(r.get("Checklist"))}<p class="hint">Market at signal: {r.get("Market", "")}</p></details>')
+                  f'{_checklist_html(r.get("Checklist"))}'
+                  + (f'<p class="hint"><b>Confirming signals:</b> {r.get("Signals")}</p>'
+                     if isinstance(r.get("Signals"), str) and r.get("Signals") else "")
+                  + f'<p class="hint">Market at signal: {r.get("Market", "")}</p></details>')
     chart_html = (f'<details><summary>Chart</summary><img alt="{r["Ticker"]} chart" '
                   f'src="data:image/png;base64,{chart}"/></details>') if chart else ""
     return f"""<article class="card" id="t-{r['Ticker']}" style="--c:{color}">
@@ -1952,6 +1975,32 @@ def write_html(path, asof, rows, res, data, ctx, n_scanned, review_html="", titl
                "<th>R:R</th><th>Warnings</th><th>P&amp;L</th><th>Earnings</th><th>Breakout date</th><th>Index</th></tr>"
                + "".join(sum_row(r) for r in act) + "</table></div></section>") if act else ""
 
+    traded = [r for r in rows if r["Closed"] and r["Status"] == "SELL" and np.isfinite(_num(r.get("EntryPrice")))]
+    traded.sort(key=lambda r: r["StatusSince"])
+    last20 = traded[-20:]
+    edge_html = ""
+    if last20:
+        rs_ = []
+        for r in last20:
+            rps, ep, pnl = _num(r.get("RiskPerShare")), _num(r.get("EntryPrice")), _num(r.get("PnLPct"))
+            if np.isfinite(rps) and rps > 0 and np.isfinite(pnl):
+                rs_.append(pnl / 100 * ep / rps)
+        wins = sum(1 for r in last20 if _num(r.get("PnLPct"), 0) > 0)
+        streak = 0
+        for r in reversed(traded):
+            if _num(r.get("PnLPct"), 0) > 0:
+                streak += 1
+            else:
+                break
+        avg_r = f"{np.mean(rs_):+.2f}R" if rs_ else "n/a"
+        edge_html = (f'<section><h2>Live track record</h2><p class="hint">Last {len(last20)} closed trades '
+                     f'(Douglas: judge an edge over at least 20): <b>{wins}/{len(last20)} winners</b>, average {avg_r}. '
+                     f'Backtest expectation for the Buy gate: about 50% winners, +0.27R average.'
+                     + (" Sample still under 20 trades - too small to judge." if len(last20) < 20 else
+                        " Below expectation - the edge may be fading; consider smaller size." if rs_ and np.mean(rs_) < 0
+                        else " In line with or better than expectation.")
+                     + (f" {streak} winners in a row: don't raise position size now (Murphy ch16, Gann rule 13)."
+                        if streak >= 4 else "") + "</p></section>")
     cols = ["Ticker", "Score", "Grade", "Category", "Pattern", "Status", "Close", "Resistance", "PctAboveRes", "VolX",
             "FollowVolX", "RangeATR", "ClearATR", "UpperWickPct", "BaseLen", "BaseDepthPct", "Touches", "ResTests120d",
             "VolDryUp", "UpDownVol", "RS20", "RS63", "RSLineHigh", "Sector", "SectorRS", "RSI", "ExtVWAP20ATR",
@@ -2030,7 +2079,11 @@ ul.ck b{{display:inline-block;width:20px}} .ok{{color:var(--up)}} .no{{color:var
 {section("Open positions", "Setups that triggered a Buy and are still running.", holding, compact=True, empty="No open positions.")}
 {closed_sec}
 <section><h2>What the labels mean</h2><ul class="gl">{glossary}</ul>
-<p class="hint">Entry, stop and target are calculated from the breakout level. Profit/loss is measured from the close on the day of the Buy signal; your real entry is the next open.</p></section>
+<p class="hint">Entry, stop and target are calculated from the breakout level. Profit/loss is measured from the close on the day of the Buy signal; your real entry is the next open.
+A Buy is exited early if it closes back below the breakout level within 10 sessions (failed breakout).</p>
+<p class="hint">The score is a pass mark, not a ranking: in the 2022-26 backtest, setups scoring 70-74 did as well as or better than those scoring 75+.
+Position size risks {ACCOUNT['risk_pct'] * 100:.0f}% of the account per trade, so a run of 20 losses (Douglas's sample size) would cost about {(1 - (1 - ACCOUNT['risk_pct']) ** 20) * 100:.0f}%.</p></section>
+{edge_html}
 {rej_sec}
 <details><summary>Full scan details ({len(res)} setups)</summary><div class="wrap">{raw_tbl}</div></details>
 <details><summary>Scan diagnostics</summary><ul class="hint">{''.join(f"<li>{x}</li>" for x in DIAG)}</ul></details>
@@ -2561,6 +2614,11 @@ def _tracker_selftest():
                                 (R * 1.1, R * 1.1, R * 1.0, R * 1.02)],
          ["WATCH", "BUY", "HOLD", "TAKE PROFIT", "TRAIL", "SELL"]),
     ]
+    stop_px = trade_plan(R, r["BaseLow"], r["ATR"], R * 1.015, np.nan)[0]
+    fail_px = (R * (1 - CFG["hold_tol"]) + stop_px) / 2            # below the level, above the stop
+    if fail_px > stop_px:
+        cases.append(("failed breakout exit", [(R * 1.01, R * 1.02, R * 0.999, R * 1.015),
+                                               (R, R, fail_px * 0.999, fail_px)], ["WATCH", "BUY", "SELL"]))
     low = pd.DataFrame([dict(r, Score=62.0, Grade="B")])
     hold = (R * 1.01, R * 1.02, R * 0.999, R * 1.015)
     cases.append(("score 62: watch only", [hold] * 6, ["WATCH"] * 6 + ["DROP"]))
@@ -2568,6 +2626,9 @@ def _tracker_selftest():
         seq, last = run(bars, low if name.startswith("score 62") else res)
         good = seq == want
         ok &= good
+        if name == "failed breakout exit":
+            good = good and str(last.get("Note", "")).startswith("Failed breakout")
+            ok &= good
         print(f"tracker : {name:<20} {' > '.join(seq)}" + ("" if good else f"   EXPECTED {' > '.join(want)}"))
     # report renders
     try:

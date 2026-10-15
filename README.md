@@ -20,6 +20,10 @@ looking for volume-confirmed breakouts out of tight consolidations
 Every setup is scored out of 100 with the checklist weights (volume 20, price action 15, base 10, relative strength 15,
 market 10, VWAP/structure 10, reward:risk 15, liquidity 5). Buy = 70+, R:R 2+, no earnings within 5 sessions, under 4 warnings (thresholds set from the backtest).
 
+Rules taken from six trading books (Murphy, Hougaard, Douglas, Allemann, Krauth, Øygard) are listed in
+`BOOK_RULES.md` with the chapter each came from, whether it was added, changed, tested or left out, and why.
+Every book-derived line in the code carries a `[Author ch.]` comment.
+
 All thresholds live in the `CFG`, `TRADE` and `ACCOUNT` blocks at the top of `breakout_scanner.py`.
 
 Technical screen only, not investment advice. Check every chart before trading.
