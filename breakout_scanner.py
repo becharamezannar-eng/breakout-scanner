@@ -337,6 +337,37 @@ def prep(d):
     d["RSI14"] = 100 - 100 / (1 + gain / loss.replace(0, np.nan))
     macd = d["Close"].ewm(span=12, adjust=False).mean() - d["Close"].ewm(span=26, adjust=False).mean()
     d["MACDH"] = macd - macd.ewm(span=9, adjust=False).mean()
+
+    # ---- Added from the books (see BOOK_RULES.md) ----------------------------------
+    C, H, L, V = d["Close"], d["High"], d["Low"], d["Volume"]
+    # Weekly-chart filter computed on daily bars so the backtest never peeks inside an
+    # unfinished week: 10-week ~ 50-day, 30-week ~ 150-day, weekly MACD(12,26,9) ~ daily (60,130,45).
+    # [Murphy ch8-10: weekly signals filter daily ones; Douglas ch11: trade with the higher time frame]
+    wmacd = C.ewm(span=60, adjust=False).mean() - C.ewm(span=130, adjust=False).mean()
+    d["WMACDH"] = wmacd - wmacd.ewm(span=45, adjust=False).mean()
+    # On-balance volume [Murphy ch7]
+    d["OBV"] = (np.sign(C.diff()).fillna(0) * V).cumsum()
+    # Wilder ADX / DMI, 14 [Murphy ch15]
+    up, dn = H.diff(), -L.diff()
+    pdm = pd.Series(np.where((up > dn) & (up > 0), up, 0.0), index=d.index)
+    mdm = pd.Series(np.where((dn > up) & (dn > 0), dn, 0.0), index=d.index)
+    atr_w = tr.ewm(alpha=1 / 14, adjust=False).mean()
+    d["PDI"] = 100 * pdm.ewm(alpha=1 / 14, adjust=False).mean() / atr_w
+    d["MDI"] = 100 * mdm.ewm(alpha=1 / 14, adjust=False).mean() / atr_w
+    dx = 100 * (d["PDI"] - d["MDI"]).abs() / (d["PDI"] + d["MDI"]).replace(0, np.nan)
+    d["ADX"] = dx.ewm(alpha=1 / 14, adjust=False).mean()
+    # Bollinger band width (squeeze) [Murphy ch9]
+    d["BBW"] = 4 * C.rolling(20).std() / d["SMA20"]
+    # STARC+ band: 6-day MA + 2 x ATR(15) [Murphy App. A]
+    d["STARCU"] = C.rolling(6).mean() + 2 * tr.rolling(15).mean()
+    # Ichimoku Kinko Hyo; the cloud at bar t was computed 26 bars earlier (no look-ahead) [Allemann ch12]
+    tenkan = (H.rolling(9).max() + L.rolling(9).min()) / 2
+    kijun = (H.rolling(26).max() + L.rolling(26).min()) / 2
+    d["TENKAN"], d["KIJUN"] = tenkan, kijun
+    d["SENKOUA"] = ((tenkan + kijun) / 2).shift(26)
+    d["SENKOUB"] = ((H.rolling(52).max() + L.rolling(52).min()) / 2).shift(26)
+    d["SENKOUA_FWD"] = (tenkan + kijun) / 2                       # cloud being built 26 bars ahead
+    d["SENKOUB_FWD"] = (H.rolling(52).max() + L.rolling(52).min()) / 2
     return d
 
 # --------------------------------------------------------------------------
@@ -359,7 +390,8 @@ def detect_double_bottom(H, L, w0, b, R):
     if len(lows) < 2:
         return False
     i1, i2 = sorted(sorted(lows, key=lambda i: L[i])[:2])
-    if i2 - i1 < 10 or abs(L[i1] - L[i2]) / min(L[i1], L[i2]) > 0.04:
+    # [Murphy ch5] valid double tops/bottoms "should have at least a month between the two troughs"
+    if i2 - i1 < 20 or abs(L[i1] - L[i2]) / min(L[i1], L[i2]) > 0.04:
         return False
     neckline = H[i1:i2 + 1].max()
     return R >= neckline * 0.97
@@ -381,20 +413,33 @@ def detect_rounded_bottom(C, start, b):
     return 0.25 <= xv <= 0.75 and r2 >= 0.6
 
 
-def detect_bull_flag(H, L, s, Lb, R, base_low):
-    if Lb > 15:
-        return False
+def detect_bull_flag(H, L, s, Lb, R, base_low, V=None, avgv=None):
+    """Bull flag / pennant [Murphy ch6]: an almost straight-line pole on heavy volume, a 1-3 week pause
+    (4-15 bars) that is flat or slopes against the trend, volume drying up noticeably in the flag.
+    Returns (is_flag, note) - note explains a volume shortfall."""
+    if Lb > 15 or Lb < 4:
+        return False, ""
     ps = max(0, s - 20)
     if s - ps < 3:
-        return False
+        return False, ""
     i_low = ps + int(np.argmin(L[ps:s]))
     pole_top = max(H[i_low:s + 1].max(), R)
     pole = pole_top - L[i_low]
     if pole <= 0:
-        return False
+        return False, ""
     gain = pole / L[i_low]
     retrace = (pole_top - base_low) / pole
-    return gain >= 0.15 and retrace <= 0.5 and _slope(H[s:s + Lb]) <= 0.002 * R
+    if not (gain >= 0.15 and retrace <= 0.5 and _slope(H[s:s + Lb]) <= 0.002 * R):
+        return False, ""
+    note = ""
+    if V is not None and avgv:
+        pole_v = V[i_low:s].mean() if s > i_low else np.nan
+        flag_v = V[s:s + Lb].mean()
+        if np.isfinite(pole_v) and pole_v < avgv:
+            note = "Flag pole was not on heavy volume"
+        elif np.isfinite(pole_v) and flag_v > 0.8 * pole_v:
+            note = "Volume did not dry up in the flag"
+    return True, note
 
 
 def resistance_tests(H, b, R, lookback=120, k=3, tol=0.02):
@@ -457,8 +502,28 @@ def supply_zone(A, b, c, target, lookback=250, bins=40):
     return np.nan
 
 
+def round_step(p):
+    """Psychological round-number spacing by price level [Murphy ch4: 10, 20, 25, 50, 75, 100, 1000s]."""
+    return 1.0 if p < 10 else 5.0 if p < 50 else 25.0 if p < 200 else 50.0 if p < 1000 else 100.0
+
+
+def round_above(p):
+    st = round_step(p)
+    return float(np.floor(p / st) * st + st)
+
+
+def below_round(stop):
+    """[Murphy ch4] avoid stops right at round numbers: if a round level sits just under the stop
+    (within 1%), place the stop 0.5% below that level instead."""
+    st = round_step(stop)
+    lvl = np.floor(stop / st) * st
+    if lvl > 0 and stop - lvl <= stop * 0.01:
+        return round(lvl * 0.995, 2)
+    return stop
+
+
 def trade_plan(R, low, atr, entry, next_res):
-    stop = min(max(low, R - TRADE["stop_atr"] * atr), R * 0.985)
+    stop = below_round(min(max(low, R - TRADE["stop_atr"] * atr), R * 0.985))
     slip = CFG["slippage"]
     e = entry * (1 + slip)
     min_target = (e + CFG["min_rr"] * max(e - stop, e * 0.005)) / (1 - slip)   # 2R after costs
@@ -528,6 +593,8 @@ def check_breakout(d, b, off, A=None):
         n = b + 1
         if C[n] < R or L[n] < R * (1 - CFG["hold_tol"]):
             return None
+        if C[n] < C[b] and V[n] > V[b]:
+            return None                              # [Murphy ch5] bull trap: selling on heavier volume
         status = "Confirmed (held next day)"
         follow_vol = V[n] / avgv
     else:
@@ -572,8 +639,11 @@ def check_breakout(d, b, off, A=None):
             pattern = "Flat base after drop -> breakout"
     elif uptrend:
         category = "Continuation"
-        if detect_bull_flag(H, L, s, Lb, R, low):
+        is_flag, flag_note = detect_bull_flag(H, L, s, Lb, R, low, V, avgv)
+        if is_flag:
             pattern = "Bull flag"
+            if flag_note:
+                flags.append(flag_note)
         elif higher_lows and touches >= 3 and Lb >= 8:
             pattern = "Ascending triangle"
         else:
@@ -588,9 +658,12 @@ def check_breakout(d, b, off, A=None):
     late_runup = runup > 0.5 and pattern != "Bull flag"
     if late_runup:
         flags.append("Big run-up before the base (late)")
+    # [Murphy ch4] a breakaway gap out of a base on heavy volume is bullish and usually not filled;
+    # [Hougaard] gap-up days favour continuation. Only a gap on weak volume is treated as a warning.
     gap = O[b] > H[b - 1] * 1.02
-    if gap:
-        flags.append("Gap-up breakout (check for news/earnings)")
+    gap_low = H[b - 1] if gap else np.nan       # a close back below this fills the gap = weakness
+    if gap and vol_ratio < CFG["strong_vol_ratio"]:
+        flags.append("Gap-up on under 2x volume (not a clean breakaway gap)")
 
     # --- trend structure, anchored VWAPs, momentum
     sw_lo = _swings(L, b - 60, b - 2, 3, "low")
@@ -603,12 +676,69 @@ def check_breakout(d, b, off, A=None):
     ext_vwap = (c - A["VWAP20"][b]) / atr if np.isfinite(A["VWAP20"][b]) else np.nan
     at_52w_high = c >= H[i52:b].max()
 
+    # --- signals added from the books (BOOK_RULES.md) ---------------------------------
+    # [Murphy ch9] Donchian 4-week rule: a real breakout is a new 20-day closing high
+    new20 = bool(c >= C[max(0, b - 20):b].max())
+    # [Murphy ch7] OBV should confirm: at a 50-day high = confirmation; well below it = divergence
+    obv = A["OBV"]
+    o_hi, o_lo = obv[b - 50:b].max(), obv[b - 50:b].min()
+    obv_confirm = bool(obv[b] >= o_hi)
+    obv_div = bool(not obv_confirm and o_hi > o_lo and (o_hi - obv[b]) > 0.15 * (o_hi - o_lo))
+    # [Murphy ch10] bearish RSI divergence: price above a prior RSI>70 peak while RSI is lower
+    rsi = A["RSI14"]
+    j0 = max(0, b - 60)
+    seg = rsi[j0:b - 4]
+    rsi_div = False
+    if len(seg) and np.isfinite(seg).any() and np.nanmax(seg) > 70:
+        j = j0 + int(np.nanargmax(seg))
+        rsi_div = bool(c > C[j] and rsi[b] < rsi[j] - 5)
+    # [Murphy ch15] ADX turning up from below 20 = new trend; falling from above 40 = trend tiring
+    adx_now, adx_prev = A["ADX"][b], A["ADX"][b - 5]
+    adx_turn_up = bool(np.isfinite(adx_prev) and adx_prev < 20 and adx_now > adx_prev)
+    adx_tiring = bool(np.isfinite(adx_prev) and adx_prev > 40 and adx_now < adx_prev)
+    di_bull = bool(A["PDI"][b] > A["MDI"][b])
+    # [Murphy ch9] Bollinger squeeze: band width at the end of the base in its lowest 20% of 6 months
+    bbw = A["BBW"]
+    wbw = bbw[max(0, b - 126):b]
+    wbw = wbw[np.isfinite(wbw)]
+    squeeze = bool(np.isfinite(bbw[b - 1]) and len(wbw) >= 60 and bbw[b - 1] <= np.percentile(wbw, 20))
+    # [Murphy ch8-10, Douglas ch11, Gann rule 16 via Allemann] weekly trend must agree
+    weekly_up = bool(c > A["SMA50"][b] > A["SMA150"][b])
+    weekly_macd_up = bool(A["WMACDH"][b] > 0 or A["WMACDH"][b] > A["WMACDH"][b - 5])
+    weekly_ok = bool(weekly_up or (category == "Bottoming" and weekly_macd_up))
+    # [Allemann ch12] Ichimoku: above the cloud, Tenkan over Kijun, bullish cloud being built ahead
+    sa, sb = A["SENKOUA"][b], A["SENKOUB"][b]
+    above_cloud = bool(np.isfinite(sa) and np.isfinite(sb) and c > max(sa, sb))
+    tk_bull = bool(A["TENKAN"][b] > A["KIJUN"][b])
+    cloud_bull = bool(A["SENKOUA_FWD"][b] > A["SENKOUB_FWD"][b])
+    # [Murphy ch6] rising wedge (bearish) and broadening formation (bearish) inside the base
+    rising_wedge = broadening = late_triangle = False
+    if Lb >= 10:
+        sh, sl = _slope(H[s:b]), _slope(L[s:b])
+        rising_wedge = bool(sh > 0 and sl > 0 and sl > 1.2 * sh)
+        broadening = bool(sh > 0 and sl < 0 and vol_rising)
+        # [Murphy ch6] triangles should break out 2/3-3/4 of the way to the apex; later loses potency
+        if "triangle" in pattern.lower() and sl > 0:
+            lo_fit = np.polyfit(np.arange(Lb), L[s:b], 1)
+            x_apex = (R - lo_fit[1]) / lo_fit[0] if lo_fit[0] > 0 else np.inf
+            late_triangle = bool(np.isfinite(x_apex) and x_apex > 0 and Lb / x_apex > 0.85)
+    for cond, txt in [(rising_wedge, "Rising wedge base (bearish shape)"),
+                      (broadening, "Broadening base with rising volume (unstable)"),
+                      (late_triangle, "Late in the triangle (past 3/4 of the way to the apex)")]:
+        if cond:
+            flags.append(txt)
+
     # --- overhead resistance, trade plan (from the latest close: breakout day, or the hold day)
     entry = C[b + off]
     nres = next_resistance(A, s, b, entry)
     stop, target, rr, capped = trade_plan(R, low, atr, entry, nres)
     supply = supply_zone(A, b, entry, target)
     room = (not np.isfinite(nres)) or nres >= entry + CFG["min_rr"] * (entry - stop)
+    # [Murphy App. A] above the STARC+ band = high-risk time to buy (chasing)
+    above_starc = bool(np.isfinite(A["STARCU"][b + off]) and entry > A["STARCU"][b + off])
+    # [Murphy ch4] round numbers act as resistance; flag one just overhead
+    rnd = round_above(entry)
+    round_overhead = bool(rnd <= entry * 1.03)
 
     return dict(
         Category=category, Pattern=pattern, Status=status, Held=off == 1,
@@ -631,6 +761,14 @@ def check_breakout(d, b, off, A=None):
         Stop=stop, Target=target, RR=rr, TargetCapped=capped,
         BaseLow=round(low, 2), ATR=round(atr, 2), ATRPct=round(atr / entry * 100, 2),
         DollarVolM=round(avgv * entry / 1e6, 1), LateRunup=bool(late_runup), Gap=bool(gap),
+        GapLow=round(gap_low, 2) if np.isfinite(gap_low) else np.nan,
+        New20dHigh=new20, OBVConfirm=obv_confirm, OBVDiv=obv_div, RSIDiv=rsi_div,
+        ADX=round(adx_now, 1) if np.isfinite(adx_now) else np.nan, ADXTurnUp=adx_turn_up, ADXTiring=adx_tiring,
+        DIBull=di_bull, Squeeze=squeeze, WeeklyUp=weekly_up, WeeklyOK=weekly_ok,
+        AboveCloud=above_cloud, TKBull=tk_bull, CloudBull=cloud_bull,
+        RisingWedge=rising_wedge, Broadening=broadening, LateTriangle=late_triangle,
+        AboveStarc=above_starc, RoundOverhead=round_overhead, RoundLevel=rnd,
+        Clear1Pct=bool((c - R) / R >= 0.01),
         Flags="; ".join(flags), _b=b, _s=s,
     )
 
@@ -675,9 +813,47 @@ def breadth_series(data, tickers):
     return br[cnt >= max(20, 0.5 * cnt.max())]
 
 
-def market_state(bench, breadth, date):
-    """Trend, breadth and distribution days for the benchmark as of a date."""
-    out = dict(Trend="Unknown", Breadth=np.nan, DistDays=0, Points=5.0, Pressure=False)
+def internals_series(data, tickers):
+    """Market internals from the scanned universe [Murphy ch18]: new 52-week highs minus new lows
+    (10-day average; Elder: "probably the best leading indicator"), share of dollar volume in
+    advancing stocks (10-day), and a breadth thrust (share above the 50-day back above 30% after
+    being below it [Murphy ch10])."""
+    hi, lo, upv, dnv = {}, {}, {}, {}
+    for t in tickers:
+        d = data.get(t)
+        if d is None or len(d) < 260:
+            continue
+        h252 = d["High"].rolling(252).max().shift(1)
+        l252 = d["Low"].rolling(252).min().shift(1)
+        hi[t] = (d["High"] > h252).astype(float).where(h252.notna())
+        lo[t] = (d["Low"] < l252).astype(float).where(l252.notna())
+        chg = d["Close"].diff()
+        dv = d["Close"] * d["Volume"]
+        upv[t] = dv.where(chg > 0, 0.0)
+        dnv[t] = dv.where(chg < 0, 0.0)
+    if not hi:
+        return pd.DataFrame()
+    NH, NL = pd.DataFrame(hi).sum(axis=1), pd.DataFrame(lo).sum(axis=1)
+    cnt = pd.DataFrame(hi).notna().sum(axis=1)
+    U, D = pd.DataFrame(upv).sum(axis=1), pd.DataFrame(dnv).sum(axis=1)
+    out = pd.DataFrame({"NH": NH, "NL": NL, "NHNL10": (NH - NL).rolling(10).mean(),
+                        "UpVol10": U.rolling(10).sum() / (U + D).rolling(10).sum()})
+    return out[cnt >= max(20, 0.5 * cnt.max())]
+
+
+def stress_series(num, den):
+    """[Øygard ch5] markets priced the Icelandic crisis (CDS spreads, bank shares halving) before the
+    experts did. Stress = ratio below its 50-day average AND at/near a 3-month low."""
+    if num is None or den is None:
+        return pd.Series(dtype=bool)
+    r = (num["Close"] / den["Close"].reindex(num.index).ffill()).dropna()
+    return (r < r.rolling(50).mean()) & (r <= r.rolling(63).min() * 1.01)
+
+
+def market_state(bench, breadth, date, internals=None, credit=None, banks=None):
+    """Trend, breadth, internals, distribution days and credit stress for a benchmark as of a date."""
+    out = dict(Trend="Unknown", Breadth=np.nan, DistDays=0, Points=5.0, Pressure=False,
+               NHNL10=np.nan, UpVol10=np.nan, Thrust=False, Credit=False, Banks=False)
     if bench is None or len(bench) < 210:
         return out
     bd = bench.loc[:date]
@@ -688,16 +864,33 @@ def market_state(bench, breadth, date):
     last = bd.iloc[-26:]
     ret = last["Close"].pct_change()
     dist = int(((ret <= -0.002) & (last["Volume"] > last["Volume"].shift(1))).iloc[1:].sum())
-    br = breadth.loc[:date].iloc[-1] if breadth is not None and len(breadth.loc[:date]) else np.nan
-    pts = {"Uptrend": 5, "Mixed": 3 if c > s50 else 1.5, "Downtrend": 0}[trend]
-    if np.isfinite(br):
-        pts += 5 if br >= 0.6 else 3.5 if br >= 0.5 else 2 if br >= 0.4 else 0
-    else:
-        pts += 2.5
-    if dist >= 6:
-        pts -= 2
-    pressure = trend == "Downtrend" or dist >= 6 or (np.isfinite(br) and br < 0.4)
-    return dict(Trend=trend, Breadth=br, DistDays=dist, Points=max(0.0, pts), Pressure=bool(pressure))
+    brs = breadth.loc[:date] if breadth is not None else pd.Series(dtype=float)
+    br = brs.iloc[-1] if len(brs) else np.nan
+    thrust = bool(len(brs) >= 15 and brs.iloc[-15:].min() < 0.30 and br > 0.30)
+
+    def last_of(series):
+        if series is None or not len(series):
+            return np.nan
+        x = series.loc[:date]
+        return x.iloc[-1] if len(x) else np.nan
+
+    nhnl = last_of(internals["NHNL10"]) if internals is not None and len(internals) else np.nan
+    upv = last_of(internals["UpVol10"]) if internals is not None and len(internals) else np.nan
+    cr = last_of(credit)
+    bk = last_of(banks)
+    credit_stress = bool(cr) if isinstance(cr, (bool, np.bool_)) else False
+    bank_stress = bool(bk) if isinstance(bk, (bool, np.bool_)) else False
+
+    pts = {"Uptrend": 4, "Mixed": 2.5 if c > s50 else 1, "Downtrend": 0}[trend]
+    pts += (3 if br >= 0.6 else 2 if br >= 0.5 else 1 if br >= 0.4 else 0) if np.isfinite(br) else 1.5
+    pts += (2 if nhnl > 0 else 0) if np.isfinite(nhnl) else 1
+    pts += (1 if upv >= 0.55 else 0) if np.isfinite(upv) else 0.5
+    pts += 2 if thrust else 0
+    pts -= (2 if dist >= 6 else 0) + (2 if credit_stress else 0) + (1 if bank_stress else 0)
+    pressure = (trend == "Downtrend" or dist >= 6 or (np.isfinite(br) and br < 0.4) or credit_stress
+                or (np.isfinite(nhnl) and nhnl < 0 and trend != "Uptrend"))
+    return dict(Trend=trend, Breadth=br, DistDays=dist, Points=float(np.clip(pts, 0, 10)), Pressure=bool(pressure),
+                NHNL10=nhnl, UpVol10=upv, Thrust=thrust, Credit=credit_stress, Banks=bank_stress)
 
 
 def _ret(x, b, n):
@@ -715,6 +908,7 @@ def enrich(r, d, A, ctx):
     # relative strength vs the benchmark
     rs5 = rs20 = rs63 = np.nan
     rs_high = leader = False
+    rs_line_up = None
     if bench is not None:
         if "REL" not in A:
             bc = bench["Close"].reindex(d.index).ffill().to_numpy(dtype=float)
@@ -725,6 +919,9 @@ def enrich(r, d, A, ctx):
             rs_high = bool(rel[b] >= rel[b - 50:b].max())
         if b >= 20:
             leader = bool(C[b] >= C[b - 20:b].max() and bc[b] < np.nanmax(bc[b - 20:b]) * 0.99)
+        # [Murphy ch17] avoid stocks whose relative-strength line is still falling
+        if b >= 50 and np.isfinite(rel[b - 50:b + 1]).all():
+            rs_line_up = bool(rel[b] > rel[b - 50:b].mean())
 
     # sector strength
     sector, sec_rs = ctx.get("sector", {}).get(r.get("Ticker")), np.nan
@@ -734,7 +931,8 @@ def enrich(r, d, A, ctx):
         sec_rs = (_ret(sc, b, 20) - _ret(A["BENCH"], b, 20)) * 100
     sec_ok = None if not np.isfinite(sec_rs) else bool(sec_rs > 0)
 
-    mkt = market_state(bench, ctx.get("breadth", {}).get(reg), date)
+    mkt = market_state(bench, ctx.get("breadth", {}).get(reg), date, ctx.get("internals", {}).get(reg),
+                       ctx.get("credit"), ctx.get("banks", {}).get(reg))
 
     # earnings
     earn = ctx.get("earnings", {}).get(r.get("Ticker"))
@@ -742,30 +940,46 @@ def enrich(r, d, A, ctx):
     if earn is not None:
         earn_days = int(np.busday_count(pd.Timestamp(date).date(), pd.Timestamp(earn).date()))
 
-    # ---------- 100-point scorecard (weights from the checklist) ----------
+    # ---------- 100-point scorecard (category weights from your checklist) ----------
+    # Book-derived signals are folded into the existing categories; each category keeps its maximum.
     v = r["VolX"]
     p_vol = 0 if v < 1.5 else 10 + 10 * (v - 1.5) if v < 2 else min(20, 15 + 5 * (v - 2))
-    p_price = (5 * np.clip((r["ClosePos"] - 0.6) / 0.4, 0, 1) + 4 * (1 - r["UpperWickPct"] / 100 / CFG["max_wick_frac"])
-               + 2 * np.clip((r["RangeATR"] - 1.1) / 0.9, 0, 1) + 2 * np.clip(r["ClearATR"] / 0.5, 0, 1)
-               + (2 if r["Held"] else 0))
+    p_vol = min(20, 0.9 * p_vol + 2 * r["OBVConfirm"])                  # [Murphy ch7] OBV confirms
+    p_price = (4 * np.clip((r["ClosePos"] - 0.6) / 0.4, 0, 1)
+               + 3 * (1 - r["UpperWickPct"] / 100 / CFG["max_wick_frac"])
+               + 2 * np.clip((r["RangeATR"] - 1.1) / 0.9, 0, 1) + 1 * np.clip(r["ClearATR"] / 0.5, 0, 1)
+               + 1 * r["Clear1Pct"]                                    # [Murphy ch4] 1% price filter
+               + 1 * r["New20dHigh"]                                   # [Murphy ch9] 4-week rule
+               + (2 if r["Held"] else 0)                               # [Murphy ch4] two-day rule
+               + (1 if r["Gap"] and v >= CFG["strong_vol_ratio"] else 0))  # [Murphy ch4] breakaway gap
+    p_price = min(15, p_price)
     dry = r["VolDryUp"]
-    p_base = (2 * max(0, r["BaseTightness"]) + 2 * min(1, (r["Touches"] + r["ResTests120d"]) / 5)
-              + 2 * r["RangeContraction"] + (2 if np.isfinite(dry) and dry < 0.85 else 1 if np.isfinite(dry) and dry < 1 else 0)
-              + (1 if r["UpDownVol"] >= 1.2 else 0) + (1 if r["Category"] == "Bottoming" else 0))
+    p_base = (1.5 * max(0, r["BaseTightness"]) + 1.5 * min(1, (r["Touches"] + r["ResTests120d"]) / 5)
+              + 1.5 * r["RangeContraction"]
+              + (1.5 if np.isfinite(dry) and dry < 0.85 else 0.75 if np.isfinite(dry) and dry < 1 else 0)
+              + (1 if r["UpDownVol"] >= 1.2 else 0) + (1 if r["Category"] == "Bottoming" else 0)
+              + 1 * r["Squeeze"]                                        # [Murphy ch9] Bollinger squeeze
+              + (1 if r["BaseLen"] >= 15 else 0))                       # [Murphy ch5, ch11] bigger base
     p_base = min(10, p_base)
-    p_rs = ((5 * np.clip(rs20 / 10, 0, 1) if np.isfinite(rs20) else 2.5)
+    p_rs = ((4 * np.clip(rs20 / 10, 0, 1) if np.isfinite(rs20) else 2)
             + (3 * np.clip(rs63 / 15, 0, 1) if np.isfinite(rs63) else 1.5)
-            + (4 if rs_high else 0) + (1.5 if sec_ok is None else 3 if sec_ok else 0))
+            + (3 if rs_high else 0) + (1.5 if sec_ok is None else 3 if sec_ok else 0)
+            + (1 if rs_line_up is None else 2 if rs_line_up else 0))    # [Murphy ch17] rising RS line
     if leader:
-        p_rs = min(15, p_rs + 2)
+        p_rs += 2
+    p_rs = min(15, p_rs)
     p_mkt = mkt["Points"]
     ev = r["ExtVWAP20ATR"]
-    p_vwap = (3 * r["AboveAVWAPBase"] + 2 * r["AboveAVWAP52wLow"]
-              + (2 if np.isfinite(ev) and ev <= 2.5 else 0) + 3 * r["Structure"])
+    p_vwap = (2 * r["AboveAVWAPBase"] + 1 * r["AboveAVWAP52wLow"]
+              + (1 if np.isfinite(ev) and ev <= 2.5 else 0) + 2 * r["Structure"]
+              + 2 * r["WeeklyOK"]                                       # [Murphy ch8-10; Douglas ch11]
+              + (1 if r["ADXTurnUp"] or (r["DIBull"] and not r["ADXTiring"]) else 0)  # [Murphy ch15]
+              + (1 if r["AboveCloud"] and r["TKBull"] else 0))          # [Allemann ch12] Ichimoku
+    p_vwap = min(10, p_vwap)
     rr = r["RR"]
     p_rr = 10 if rr >= 3 else 7 + 3 * (rr - 2) if rr >= 2 else 3 if rr >= 1.5 else 0
     p_rr += 5 if r["Room"] else 0
-    p_rr -= 3 if np.isfinite(r["SupplyZone"]) else 0
+    p_rr -= (3 if np.isfinite(r["SupplyZone"]) else 0) + (1 if r["RoundOverhead"] else 0)  # [Murphy ch4]
     p_rr = max(0, p_rr)
     dv = r["DollarVolM"]
     p_liq = 5 if dv >= 50 else 4 if dv >= 20 else 3 if dv >= 10 else 2
@@ -779,36 +993,64 @@ def enrich(r, d, A, ctx):
     warn = []
     if v < CFG["strong_vol_ratio"]:
         warn.append(f"Volume only {v}x (under 2x)")
+    if r["Category"] == "Bottoming" and v < CFG["strong_vol_ratio"]:
+        warn.append("Bottom breakout without a big volume surge (essential at bottoms)")   # [Murphy ch5]
     if r["UpperWickPct"] > 20:
         warn.append(f"Upper wick {r['UpperWickPct']}% of the candle")
     if r["ClosePos"] < 0.7:
         warn.append("Closed off the high of the day")
+    if not r["New20dHigh"]:
+        warn.append("Not a new 20-day closing high")                                      # [Murphy ch9]
+    if r["OBVDiv"]:
+        warn.append("On-balance volume not confirming the new high")                      # [Murphy ch7]
+    if r["RSIDiv"]:
+        warn.append("Bearish RSI divergence (price higher, RSI lower than its last peak)") # [Murphy ch10]
+    if not r["WeeklyOK"]:
+        warn.append("Weekly trend not up")                                                # [Murphy ch10]
+    if r["ADXTiring"]:
+        warn.append(f"ADX falling from above 40 (trend tiring)")                          # [Murphy ch15]
     if np.isfinite(rs20) and rs20 < 0:
         warn.append(f"Lagging the market over 20 days ({rs20:+.1f} pts)")
+    if rs_line_up is False:
+        warn.append("Relative-strength line below its 50-day average")                    # [Murphy ch17]
     if sec_ok is False:
         warn.append(f"Sector ({sector}) lagging the market")
     if r["PctAboveRes"] > TRADE["extended"] * 100 or (np.isfinite(ev) and ev > 2.5):
         warn.append("Extended above the breakout level / 20-day VWAP")
+    if r["AboveStarc"]:
+        warn.append("Above the STARC+ band: chasing, high-risk entry")                    # [Murphy App. A]
     if not r["Room"] or rr < CFG["min_rr"]:
         warn.append(f"Resistance at {r['NextRes']} limits upside (R:R {rr})")
     if np.isfinite(r["SupplyZone"]):
         warn.append(f"Heavy-volume supply zone near {r['SupplyZone']}")
+    if r["RoundOverhead"]:
+        warn.append(f"Round-number resistance just above at {r['RoundLevel']:g}")         # [Murphy ch4]
     if np.isfinite(earn_days) and 0 <= earn_days <= CFG["earnings_block_days"]:
         warn.append(f"Earnings in {earn_days} sessions")
     if mkt["Pressure"]:
-        warn.append(f"Market under pressure ({mkt['Trend']}, {mkt['DistDays']} distribution days)")
+        extra = ", credit stress" if mkt["Credit"] else ""
+        warn.append(f"Market under pressure ({mkt['Trend']}, {mkt['DistDays']} distribution days{extra})")
     if r["ATRPct"] / 100 > CFG["max_atr_pct"]:
         warn.append(f"Erratic: daily range {r['ATRPct']}% of price")
-    if r["RSI"] > 80:
-        warn.append(f"RSI overbought ({r['RSI']})")
     if dv < 10:
         warn.append(f"Thin liquidity (${dv}M/day)")
     if r["LateRunup"]:
         warn.append("Big run-up before the base (late)")
     if r["Category"] == "Other":
         warn.append("No clear trend or bottom behind it")
-    if r["Gap"]:
-        warn.append("Gap-up breakout: check the news")
+    for f in str(r.get("Flags") or "").split("; "):                 # pattern-shape warnings [Murphy ch6]
+        if f and f not in warn and not f.startswith("No clear trend") and not f.startswith("Big run-up"):
+            warn.append(f)
+    # seasonality [Krauth ch35]
+    month = pd.Timestamp(date).month
+    industry = ctx.get("industry", {}).get(r.get("Ticker")) or ""
+    precious = any(k in industry for k in ("Gold", "Silver", "Precious"))
+    if precious and month in (6, 7, 8):
+        warn.append("Seasonally weak period for precious metals (Jun-Aug)")
+    if month == 12 and pd.Timestamp(date).day >= 1 and dv < 50:
+        ytd_i = max(0, b - pd.Timestamp(date).dayofyear * 5 // 7)
+        if C[ytd_i] > 0 and C[b] / C[ytd_i] - 1 < -0.20:
+            warn.append("December tax-loss selling season (stock down 20%+ this year)")
 
     # ---------- position size ----------
     risk_ps = r["Close"] - r["Stop"]
@@ -825,7 +1067,8 @@ def enrich(r, d, A, ctx):
         ("Breaks resistance on expanding relative volume", v >= CFG["min_vol_ratio"]),
         ("Closes convincingly above resistance", r["ClearATR"] >= 0.25 and r["ClosePos"] >= 0.7),
         ("No significant immediate rejection", True if r["Held"] else None),
-        ("VWAP and momentum support the trade", bool(r["AboveAVWAPBase"] and 50 <= r["RSI"] <= 80 and r["MACDH"] > 0)),
+        ("VWAP and momentum support the trade", bool(r["AboveAVWAPBase"] and r["MACDH"] > 0 and not r["RSIDiv"]
+                                                     and r["WeeklyOK"])),
         ("Retest holds / entry meets the rules", (r["PctAboveRes"] <= TRADE["extended"] * 100) if r["Held"] else None),
         ("Enough upside before the next resistance", bool(r["Room"])),
         ("Stop and invalidation point defined", True),
@@ -847,6 +1090,7 @@ def enrich(r, d, A, ctx):
         EarningsDate=pd.Timestamp(earn).date().isoformat() if earn is not None else "",
         EarnDays=earn_days, Shares=shares, RiskPerShare=round(risk_ps, 2),
         Checklist="".join("-" if ok is None else "1" if bool(ok) else "0" for _, ok in checklist),
+        RSLineUp=rs_line_up, Industry=industry, Precious=precious,
     )
     return r
 
@@ -863,24 +1107,29 @@ CHECKLIST_LABELS = [
 
 
 def fetch_sector_earnings(tickers, cache_path):
-    """Sector (cached) and next earnings date for the candidates only."""
+    """Sector and industry (cached) and next earnings date - for the candidates only."""
     import yfinance as yf
     cache = {}
     if cache_path and os.path.exists(cache_path):
         try:
-            cache = dict(pd.read_csv(cache_path, dtype=str, keep_default_na=False).values.tolist())
+            cdf = pd.read_csv(cache_path, dtype=str, keep_default_na=False)
+            for row in cdf.itertuples(index=False):
+                cache[row[0]] = (row[1], row[2] if len(row) > 2 else "")
         except Exception:
             cache = {}
-    sectors, earnings = {}, {}
+    sectors, industries, earnings = {}, {}, {}
     today = dt.date.today()
     for t in tickers:
         tk = yf.Ticker(t)
-        if t not in cache or not cache[t]:
+        sec, ind = cache.get(t, ("", ""))
+        if not sec or not ind:
             try:
-                cache[t] = (tk.get_info() or {}).get("sector", "") or ""
+                info = tk.get_info() or {}
+                sec, ind = info.get("sector", "") or "", info.get("industry", "") or ""
             except Exception:
-                cache[t] = ""
-        sectors[t] = cache[t] or None
+                pass
+            cache[t] = (sec, ind)
+        sectors[t], industries[t] = sec or None, ind or None
         try:
             cal = tk.calendar
             dates = cal.get("Earnings Date", []) if isinstance(cal, dict) else []
@@ -890,8 +1139,27 @@ def fetch_sector_earnings(tickers, cache_path):
         except Exception:
             pass
     if cache_path:
-        pd.DataFrame(sorted(cache.items()), columns=["Ticker", "Sector"]).to_csv(cache_path, index=False)
-    return sectors, earnings
+        pd.DataFrame([(k, a, b) for k, (a, b) in sorted(cache.items())],
+                     columns=["Ticker", "Sector", "Industry"]).to_csv(cache_path, index=False)
+    return sectors, industries, earnings
+
+
+STRESS_TICKERS = ["HYG", "IEF", "KBE", "SI=F", "TIP"]   # credit, Treasuries, banks, silver, real-yield proxy
+
+
+def build_context(data, tickers):
+    """Benchmarks, breadth, internals, credit and bank stress shared by the scan and the backtest."""
+    us = [t for t in tickers if region(t) == "US"]
+    ca = [t for t in tickers if region(t) == "CA"]
+    return dict(
+        bench={k: data.get(v) for k, v in BENCH.items()},
+        breadth={"US": breadth_series(data, us), "CA": breadth_series(data, ca)},
+        internals={"US": internals_series(data, us), "CA": internals_series(data, ca)},
+        credit=stress_series(data.get("HYG"), data.get("IEF")),                      # [Øygard ch5]
+        banks={"US": stress_series(data.get("KBE"), data.get("SPY")),
+               "CA": stress_series(data.get("XFN.TO"), data.get("XIU.TO"))},
+        sector_data={e: data[e] for e in ALL_SECTOR_ETFS if e in data},
+        sector={}, industry={}, earnings={})
 
 # --------------------------------------------------------------------------
 # Signal tracker: follows every setup from day to day and gives an action
@@ -1090,7 +1358,7 @@ def update_tracker(rows, res, data, asof):
 REVIEW_INDEXES = [("SPY", "S&P 500 (SPY)"), ("QQQ", "Nasdaq-100 (QQQ)"), ("DIA", "Dow Jones (DIA)"),
                   ("IWM", "Russell 2000 (IWM)"), ("XIU.TO", "S&P/TSX 60 (XIU)")]   # tracked through their ETFs
 REVIEW_MACRO = [("^VIX", "VIX (volatility)"), ("^TNX", "US 10-yr yield"), ("CAD=X", "USD/CAD"),
-                ("CL=F", "Crude oil"), ("GC=F", "Gold")]
+                ("CL=F", "Crude oil"), ("GC=F", "Gold"), ("SI=F", "Silver"), ("HYG", "High-yield bonds (HYG)")]
 SECTOR_NAMES = {"XLK": "Technology", "XLF": "Financials", "XLV": "Health Care", "XLE": "Energy",
                 "XLI": "Industrials", "XLY": "Consumer Discretionary", "XLP": "Consumer Staples",
                 "XLU": "Utilities", "XLRE": "Real Estate", "XLB": "Materials", "XLC": "Communication",
@@ -1142,24 +1410,35 @@ def market_regime(spy_state, br, vix):
     """Overall stance for breakout trading."""
     trend, dist = spy_state["Trend"], spy_state["DistDays"]
     a50 = br["a50"]
+    if spy_state.get("Credit") and trend != "Uptrend":
+        return ("Risk-off", "#b42318", "Credit markets are under stress while stocks are not trending up. "
+                "Avoid new long entries; protect open positions.")
+    if spy_state.get("Thrust") and trend != "Downtrend":
+        return ("Constructive", "#1d5fbf", "Breadth thrust: participation just jumped back from oversold. "
+                "New uptrends often start this way; normal size on the best setups.")
     if trend == "Downtrend" or (np.isfinite(vix) and vix >= 28) or (np.isfinite(a50) and a50 < 0.25 and trend != "Uptrend"):
         return ("Risk-off", "#b42318", "Breakouts fail often in this tape. Avoid new long entries; protect open positions.")
-    if (np.isfinite(a50) and a50 < 0.45) or dist >= 6 or (np.isfinite(vix) and vix >= 20) or trend == "Mixed":
+    if ((np.isfinite(a50) and a50 < 0.45) or dist >= 6 or (np.isfinite(vix) and vix >= 20) or trend == "Mixed"
+            or spy_state.get("Credit") or (np.isfinite(spy_state.get("NHNL10", np.nan)) and spy_state["NHNL10"] < 0)):
         return ("Cautious", "#a15c00", "Narrow or shaky market. Trade only the strongest setups, at half size, and take profits sooner.")
     if np.isfinite(a50) and a50 >= 0.6 and dist <= 4 and (not np.isfinite(vix) or vix < 18):
         return ("Risk-on", "#16794a", "Broad, healthy advance. Breakouts have the best odds; normal position size.")
     return ("Constructive", "#1d5fbf", "Market supports breakouts, but be selective; normal size on the best setups.")
 
 
-def market_review(data, tickers, n_setups=None, live=False):
+def market_review(data, tickers, n_setups=None, live=False, ctx=None):
     spy = data.get("SPY")
     us = [t for t in tickers if region(t) == "US"]
     ca = [t for t in tickers if region(t) == "CA"]
     br_us, br_ca = breadth_today(data, us), breadth_today(data, ca)
-    st_us = market_state(spy, breadth_series(data, us), spy.index[-1]) if spy is not None else \
-        dict(Trend="Unknown", Breadth=np.nan, DistDays=0, Pressure=False)
+    ctx = ctx or build_context(data, tickers)
+    st_us = market_state(spy, ctx["breadth"]["US"], spy.index[-1], ctx["internals"]["US"], ctx["credit"],
+                         ctx["banks"]["US"]) if spy is not None else \
+        dict(Trend="Unknown", Breadth=np.nan, DistDays=0, Pressure=False, Credit=False, Banks=False,
+             NHNL10=np.nan, UpVol10=np.nan, Thrust=False)
     xiu = data.get("XIU.TO")
-    st_ca = market_state(xiu, breadth_series(data, ca), xiu.index[-1]) if xiu is not None else None
+    st_ca = market_state(xiu, ctx["breadth"]["CA"], xiu.index[-1], ctx["internals"]["CA"], ctx["credit"],
+                         ctx["banks"]["CA"]) if xiu is not None else None
     vixd = data.get("^VIX")
     vix = vixd["Close"].iloc[-1] if vixd is not None and len(vixd) else np.nan
     vix_chg = vixd["Close"].iloc[-1] - vixd["Close"].iloc[-2] if vixd is not None and len(vixd) > 1 else np.nan
@@ -1235,8 +1514,13 @@ def market_review(data, tickers, n_setups=None, live=False):
         txt = (f"Participation is {health}: {pct(br_us['a50'])} of US stocks are above their 50-day average and "
                f"{pct(br_us['a200'])} above their 200-day. {br_us['nh']} new 52-week highs vs {br_us['nl']} new lows; "
                f"{pct(br_us['ad'])} of stocks advanced, carrying {pct(br_us['upvol'])} of the dollar volume.")
+        if np.isfinite(st_us.get("NHNL10", np.nan)):
+            txt += (f" Over 10 days, new highs minus new lows average {st_us['NHNL10']:+.0f} a day"
+                    f" and {pct(st_us['UpVol10'])} of dollar volume went into rising stocks.")
         if st_us["DistDays"] >= 5:
             txt += f" {st_us['DistDays']} distribution days in the last 25 sessions point to institutional selling."
+        if st_us.get("Thrust"):
+            txt += " Breadth thrust: the share of stocks above their 50-day just recovered from below 30%."
         lines.append(("Breadth", txt))
     if np.isfinite(vix):
         mood = "calm" if vix < 15 else "normal" if vix < 20 else "elevated" if vix < 28 else "stressed"
@@ -1246,7 +1530,31 @@ def market_review(data, tickers, n_setups=None, live=False):
             txt += f" The US 10-year yield is {tnx['Close'].iloc[-1]:.2f}% ({(tnx['Close'].iloc[-1] - tnx['Close'].iloc[-6]) * 100:+.0f} bp this week)."
         if cad is not None and len(cad) > 6:
             txt += f" USD/CAD {cad['Close'].iloc[-1]:.4f}."
+        if st_us.get("Credit"):
+            txt += " Credit stress: high-yield bonds are breaking down against Treasuries."
+        elif "HYG" in data:
+            txt += " Credit markets are calm (high-yield bonds holding up against Treasuries)."
+        if st_us.get("Banks"):
+            txt += " Bank stocks are breaking down relative to the market."
         lines.append(("Risk", txt))
+    gold, silver, tip = data.get("GC=F"), data.get("SI=F"), data.get("TIP")
+    if gold is not None and silver is not None and len(gold) > 25 and len(silver) > 25:
+        gsr = (gold["Close"] / silver["Close"].reindex(gold.index).ffill()).dropna()
+        if len(gsr) > 21:
+            now_r, prev_r = gsr.iloc[-1], gsr.iloc[-21]
+            mtxt = (f"Gold/silver ratio {now_r:.0f} ({'falling' if now_r < prev_r else 'rising'} over the month); "
+                    + ("a ratio above 80 that turns down has marked silver-led metals rallies. " if now_r >= 80 and now_r < prev_r
+                       else "silver is leading gold. " if now_r < prev_r else "gold is leading silver. "))
+            if tip is not None and len(tip) > 21:
+                tchg = _chg(tip, 21)
+                mtxt += (f"Real yields are {'falling' if tchg > 0 else 'rising'} (TIPS {tchg:+.1f}% over the month), "
+                         + ("a tailwind for precious metals." if tchg > 0 else "a headwind for precious metals."))
+            mon = pd.Timestamp(spy.index[-1]).month if spy is not None else dt.date.today().month
+            if mon in (6, 7, 8):
+                mtxt += " Seasonally, June-August is the weakest stretch for metals."
+            elif mon in (9, 10, 11, 12, 1, 2):
+                mtxt += " Seasonally, September-February is metals' strongest stretch."
+            lines.append(("Metals", mtxt))
     if len(us_sec) >= 4:
         lines.append(("Sectors", f"Leading over the month: {us_sec[0][0]} ({us_sec[0][2]:+.1f}%) and {us_sec[1][0]} ({us_sec[1][2]:+.1f}%). "
                                  f"Lagging: {us_sec[-1][0]} ({us_sec[-1][2]:+.1f}%) and {us_sec[-2][0]} ({us_sec[-2][2]:+.1f}%)."))
@@ -1259,8 +1567,12 @@ def market_review(data, tickers, n_setups=None, live=False):
                                  f"{' so far today' if live else ' today'}; see the scores below."))
     story = "".join(f"<li><b>{k}.</b> {v}</li>" for k, v in lines)
 
-    tiles = [("US breadth", pct(br_us["a50"]), "above 50-day"), ("New highs / lows", f"{br_us['nh']} / {br_us['nl']}", "52-week, US"),
-             ("Distribution days", str(st_us["DistDays"]), "S&P 500, 25 sessions"),
+    nh10 = st_us.get("NHNL10", np.nan)
+    tiles = [("US breadth", pct(br_us["a50"]), "above 50-day"),
+             ("New highs − lows", f"{nh10:+.0f}" if np.isfinite(nh10) else f"{br_us['nh']} / {br_us['nl']}",
+              "10-day average, US" if np.isfinite(nh10) else "52-week, US"),
+             ("Distribution days", str(st_us["DistDays"]), "S&P 500, 25 sessions"
+              + (" · credit stress" if st_us.get("Credit") else "")),
              ("VIX", f"{vix:.1f}" if np.isfinite(vix) else "-", f"{vix_chg:+.1f} today" if np.isfinite(vix_chg) else ""),
              ("Advancers", pct(br_us["ad"]), f"{br_us['adv']:,} up / {br_us['dec']:,} down"),
              ("Canada breadth", pct(br_ca["a50"]), "TSX above 50-day")]
@@ -1937,8 +2249,23 @@ def inject_morning_summary(outdir, items, stamp, now):
 # --------------------------------------------------------------------------
 # Backtest: do these rules make money after costs?
 # --------------------------------------------------------------------------
-def simulate_trade(A, b, r, plan_entry_day):
-    """Enter at the open after the hold day; hard stop (gap-aware), half off at target, trail the rest."""
+EXIT_VARIANTS = {
+    # A: the rules before the books - half at target, trail the rest by 2 ATR, hard stop, 15-day time stop
+    "A": dict(name="Before: half at target, trail rest", scale=[(0.5, "target")], fail=False, be=False, trail="target"),
+    # B: + failed-breakout exit [Murphy ch5; Hougaard] + breakeven after +1R [Gann rule 3; Douglas ch11]
+    "B": dict(name="+ failed-breakout exit + breakeven at +1R", scale=[(0.5, "target")], fail=True, be=True,
+              trail="target"),
+    # C: Douglas's thirds [Trading in the Zone ch11] - 1/3 at +1R, 1/3 at target (stop to entry), trail the last third
+    "C": dict(name="Thirds: 1/3 at +1R, 1/3 at target, trail 1/3", scale=[(1 / 3, "1R"), (1 / 3, "target")],
+              fail=True, be=True, trail="target"),
+    # D: Hougaard - no profit target, trail everything once +1R is reached
+    "D": dict(name="No target: trail all after +1R", scale=[], fail=True, be=True, trail="1R"),
+}
+
+
+def simulate_trade(A, b, r, plan_entry_day, variant="A"):
+    """Enter at the open after the hold day; hard stop (filled at the open if it gaps through); exits per variant."""
+    V_ = EXIT_VARIANTS[variant]
     O, H, L, C = A["Open"], A["High"], A["Low"], A["Close"]
     n = len(C)
     j0 = plan_entry_day
@@ -1954,36 +2281,54 @@ def simulate_trade(A, b, r, plan_entry_day):
     slip = CFG["slippage"]
     e = entry * (1 + slip)
     risk = e - stop
-    pos, pnl, half, high_c = 1.0, 0.0, False, entry
+    one_r = entry + risk
+    pending = [list(x) for x in V_["scale"]]
+    pos, pnl, high_c, target_hit = 1.0, 0.0, entry, False
     exit_day, reason = None, ""
     for j in range(j0, min(n, j0 + 60)):
         fill_open = O[j] if j > j0 else entry
         if L[j] <= stop:
             px = min(fill_open, stop)
             pnl += pos * (px * (1 - slip) - e)
-            exit_day, reason, pos = j, ("trail stop" if half else "stop"), 0
+            exit_day, reason, pos = j, ("trail/breakeven stop" if stop >= entry else "stop"), 0
             break
-        if not half and H[j] >= target:
-            px = max(fill_open, target)
-            pnl += 0.5 * (px * (1 - slip) - e)
-            pos, half = 0.5, True
-            stop = max(stop, entry)
+        for item in pending:
+            frac, lvl = item
+            if frac <= 0:
+                continue
+            price = one_r if lvl == "1R" else target
+            if H[j] >= price:
+                pnl += frac * (max(fill_open, price) * (1 - slip) - e)
+                pos -= frac
+                item[0] = 0
+                if lvl == "target":
+                    target_hit = True
+                    stop = max(stop, entry)
+        if pos <= 1e-9:
+            exit_day, reason = j, "all targets"
+            break
         high_c = max(high_c, C[j])
-        if half:
+        if V_["be"] and C[j] >= one_r:
+            stop = max(stop, entry)
+        if (V_["trail"] == "target" and target_hit) or (V_["trail"] == "1R" and high_c >= one_r):
             stop = max(stop, high_c - TRADE["trail_atr"] * r["ATR"])
         held = j - j0 + 1
-        if not half and held >= TRADE["time_stop_days"] and C[j] < entry * (1 + TRADE["time_stop_gain"]):
-            px = O[j + 1] if j + 1 < n else C[j]
-            pnl += pos * (px * (1 - slip) - e)
+        nxt = O[j + 1] if j + 1 < n else C[j]
+        if V_["fail"] and held <= 10 and C[j] < R * (1 - CFG["hold_tol"]):
+            pnl += pos * (nxt * (1 - slip) - e)
+            exit_day, reason, pos = j + 1, "failed breakout", 0
+            break
+        if not target_hit and held >= TRADE["time_stop_days"] and C[j] < entry * (1 + TRADE["time_stop_gain"]):
+            pnl += pos * (nxt * (1 - slip) - e)
             exit_day, reason, pos = j + 1, "time stop", 0
             break
     if pos > 0:
         j = min(n - 1, j0 + 59)
         pnl += pos * (C[j] * (1 - slip) - e)
         exit_day, reason = j, ("max hold" if j == j0 + 59 else "open at end of data")
-    return dict(Outcome="trade", Entry=round(entry, 2), Stop0=round(e - risk, 2), Target=target, RRPlan=rr,
-                R=round(pnl / risk, 3), PnLPct=round(pnl / e * 100, 2), Days=exit_day - j0 + 1, Exit=reason,
-                HitTarget=half)
+    return dict(Outcome="trade", Entry=round(entry, 2), Stop0=round(e - risk, 2), Target=target,
+                RRPlan=rr, R=round(pnl / risk, 3), PnLPct=round(pnl / e * 100, 2), Days=exit_day - j0 + 1,
+                Exit=reason, HitTarget=target_hit)
 
 
 def _stats(df):
@@ -2004,17 +2349,16 @@ def run_backtest(a):
     print("Backtest: loading universe...")
     membership = build_universe([k.strip() for k in a.bt_indexes.split(",") if k.strip()])
     tickers = sorted(membership)
-    raw = download(sorted(set(tickers) | set(BENCH.values())), period=f"{a.bt_years}y")
+    raw = download(sorted(set(tickers) | set(BENCH.values()) | set(STRESS_TICKERS) | {"XFN.TO"}),
+                   period=f"{a.bt_years}y")
     data = {}
     for t, d in raw.items():
         try:
             data[t] = prep(d)
         except Exception:
             pass
-    ctx = dict(bench={k: data.get(v) for k, v in BENCH.items()},
-               breadth={"US": breadth_series(data, [t for t in tickers if region(t) == "US"]),
-                        "CA": breadth_series(data, [t for t in tickers if region(t) == "CA"])},
-               sector={}, earnings={}, sector_data={})
+    ctx = build_context(data, tickers)
+    ctx["sector_data"] = {}            # no point-in-time sector membership history: scored neutral
     sigs = []
     for k, t in enumerate(tickers):
         d = data.get(t)
@@ -2040,10 +2384,18 @@ def run_backtest(a):
             row = dict(Ticker=t, Date=pd.Timestamp(d.index[b]).date().isoformat(), Category=r["Category"],
                        Pattern=r["Pattern"], Score=round(score_h, 1), RRSignal=r["RR"], NWarn=r["NWarn"],
                        VolX=r["VolX"], Held=held, Extended=bool(held and ext), Region=region(t),
+                       WeeklyOK=r["WeeklyOK"], New20=r["New20dHigh"], RSIDiv=r["RSIDiv"], OBVDiv=r["OBVDiv"],
+                       Squeeze=r["Squeeze"], AboveCloud=r["AboveCloud"], ADXTurnUp=r["ADXTurnUp"],
+                       Warnings=r["Warnings"], Year=pd.Timestamp(d.index[b]).year,
                        Gate=bool(score_h >= CFG["score_buy"] and r["RR"] >= CFG["min_rr"] and r["NWarn"] < CFG["max_warnings"]))
             if held and not ext:
-                tr = simulate_trade(A, b, r, b + 2)
+                tr = simulate_trade(A, b, r, b + 2, "A")
                 row.update(tr or dict(Outcome="no data"))
+                for vk in EXIT_VARIANTS:
+                    tv = simulate_trade(A, b, r, b + 2, vk) or {}
+                    row[f"R_{vk}"] = tv.get("R", np.nan)
+                    row[f"Days_{vk}"] = tv.get("Days", np.nan)
+                    row[f"Exit_{vk}"] = tv.get("Exit", "")
                 next_ok = b + 2 + int(row.get("Days", 5) or 5)
             else:
                 row["Outcome"] = "extended - no entry" if held else "failed hold"
@@ -2074,6 +2426,37 @@ def write_backtest_html(path, df, a, n_tickers, secs):
             return pd.DataFrame(rows_).to_html(index=False, border=0, na_rep="-")
         score_bins = pd.cut(df["Score"], [0, CFG["score_watch"], CFG["score_buy"], 101], right=False,
                             labels=[f"Under {CFG['score_watch']}", f"{CFG['score_watch']}-{CFG['score_buy'] - 1}", f"{CFG['score_buy']}+"])
+        def stats_for(x, col):
+            y = x.copy()
+            if col in y.columns:
+                y["R"] = y[col]
+                y.loc[y["Outcome"] == "trade", "PnLPct"] = y["PnLPct"]
+            return _stats(y)
+
+        var_rows = [dict(Rule=f"{k}: {v['name']}", **stats_for(df, f"R_{k}")) for k, v in EXIT_VARIANTS.items()
+                    if f"R_{k}" in df.columns]
+        tbl_var = pd.DataFrame(var_rows).to_html(index=False, border=0, na_rep="-") if var_rows else ""
+        cand = [(stats_for(df, f"R_{k}").get("AvgR", -9), k) for k in EXIT_VARIANTS if f"R_{k}" in df.columns]
+        best = max(cand)[1] if cand else "A"
+        g = (df["Score"] >= CFG["score_buy"]) & (df["RRSignal"] >= CFG["min_rr"])
+        filt = [("All trades", df), (f"Score {CFG['score_buy']}+ and R:R {CFG['min_rr']:g}+", df[g]),
+                ("... and under 4 warnings (current Buy gate)", df[g & (df["NWarn"] < CFG["max_warnings"])]),
+                ("Score + R:R 3+ [Murphy ch16, Douglas ch11]", df[(df["Score"] >= CFG["score_buy"]) & (df["RRSignal"] >= 3)]),
+                ("Score + R:R, excluding 'Other' [Gann rule 16]", df[g & (df["Category"] != "Other")])]
+        for col, lab in [("WeeklyOK", "weekly trend up [Murphy ch10]"), ("New20", "new 20-day high [Murphy ch9]"),
+                         ("Squeeze", "Bollinger squeeze [Murphy ch9]"), ("AboveCloud", "above Ichimoku cloud [Allemann]"),
+                         ("ADXTurnUp", "ADX turning up from <20 [Murphy ch15]")]:
+            if col in df.columns:
+                filt.append((f"Score + R:R, {lab}", df[g & df[col].astype(bool)]))
+                filt.append((f"Score + R:R, NOT {lab}", df[g & ~df[col].astype(bool)]))
+        if "RSIDiv" in df.columns:
+            filt.append(("Score + R:R, with bearish RSI divergence [Murphy ch10]", df[g & df["RSIDiv"].astype(bool)]))
+        tbl_filters = pd.DataFrame([dict(Group=k, **stats_for(x, f"R_{best}")) for k, x in filt if len(x)]
+                                   ).to_html(index=False, border=0, na_rep="-")
+        gate = df[g & (df["NWarn"] < CFG["max_warnings"])]
+        yrs = [dict(Group=str(y), **stats_for(gate[gate["Year"] == y], f"R_{best}"))
+               for y in sorted(gate["Year"].unique())] if "Year" in gate.columns and len(gate) else []
+        tbl_years = pd.DataFrame(yrs).to_html(index=False, border=0, na_rep="-") if yrs else ""
         held = df["Held"].mean() * 100
         t = df[df["Outcome"] == "trade"]
         span = f"{df['Date'].min()} to {df['Date'].max()}"
@@ -2084,6 +2467,9 @@ def write_backtest_html(path, df, a, n_tickers, secs):
 0.1% slippage each side. R = profit divided by the initial risk per share; average R above 0 means the rules made money.</p>
 <h2>Does the scorecard work?</h2>{tbl([("All trades", df), ("Gate pass = would be a Buy", df[df["Gate"]]), ("Gate fail", df[~df["Gate"]])]
                                        + [(f"Score {lab}", df[score_bins == lab]) for lab in score_bins.cat.categories])}
+<h2>Exit rules compared (same trades)</h2>{tbl_var}
+<h2>Entry filters from the books (using exit rule {best})</h2>{tbl_filters}
+<h2>Year by year (current Buy gate, exit rule {best})</h2>{tbl_years}
 <h2>By setup type</h2>{tbl([(c, df[df["Category"] == c]) for c in ["Bottoming", "Continuation", "Other"]])}
 <h2>By pattern</h2>{tbl([(p, df[df["Pattern"] == p]) for p in sorted(df["Pattern"].unique())])}
 <h2>By breakout volume</h2>{tbl([("1.5-2x", df[df["VolX"] < 2]), ("2-3x", df[(df["VolX"] >= 2) & (df["VolX"] < 3)]), ("3x+", df[df["VolX"] >= 3])])}
@@ -2256,7 +2642,7 @@ def main():
     rows = load_tracker(tracker_path)
     tracked = {r["Ticker"] for r in rows if not r["Closed"]}
     ctx_t = ["SPY", "DIA", "QQQ", "IWM", "XIU.TO"]
-    raw = download(sorted(set(tickers) | set(ctx_t) | tracked | set(ALL_SECTOR_ETFS) | set(MACRO_TICKERS)))
+    raw = download(sorted(set(tickers) | set(ctx_t) | tracked | set(ALL_SECTOR_ETFS) | set(MACRO_TICKERS) | set(STRESS_TICKERS)))
     DIAG.append(f"Universe {len(tickers)} unique tickers; price data received for {len(raw)}")
     data = {}
     frac = session_fraction()
@@ -2289,19 +2675,16 @@ def main():
     print(f"{len(found)} tickers passed the breakout rules; scoring...")
 
     # market context: benchmark trend, breadth (from the whole universe), sector ETFs
-    ctx = dict(bench={k: data.get(v) for k, v in BENCH.items()},
-               breadth={"US": breadth_series(data, [t for t in tickers if region(t) == "US"]),
-                        "CA": breadth_series(data, [t for t in tickers if region(t) == "CA"])},
-               sector_data={e: data[e] for e in ALL_SECTOR_ETFS if e in data})
+    ctx = build_context(data, tickers)
     try:
-        sectors, earnings = fetch_sector_earnings([r["Ticker"] for r, _ in found],
-                                                  os.path.join(a.outdir, "sectors.csv"))
+        sectors, industries, earnings = fetch_sector_earnings([r["Ticker"] for r, _ in found],
+                                                              os.path.join(a.outdir, "sectors.csv"))
     except Exception as e:
-        sectors, earnings = {}, {}
+        sectors, industries, earnings = {}, {}, {}
         DIAG.append(f"Sector/earnings lookup failed: {str(e)[:120]}")
     DIAG.append(f"Sector known for {sum(1 for v in sectors.values() if v)}/{len(found)} candidates; "
                 f"earnings dates for {len(earnings)}")
-    ctx.update(sector=sectors, earnings=earnings)
+    ctx.update(sector=sectors, industry=industries, earnings=earnings)
 
     results = []
     for r, A in found:
@@ -2315,7 +2698,8 @@ def main():
     MARKET.clear()
     for reg, name in (("US", "US (S&P 500)"), ("CA", "Canada (TSX 60)")):
         if ctx["bench"].get(reg) is not None:
-            m = market_state(ctx["bench"][reg], ctx["breadth"][reg], ctx["bench"][reg].index[-1])
+            m = market_state(ctx["bench"][reg], ctx["breadth"][reg], ctx["bench"][reg].index[-1],
+                             ctx["internals"][reg], ctx["credit"], ctx["banks"][reg])
             MARKET.append((name, m))
 
     asof = max(data[t].index[-1] for t in ctx_t if t in data) if any(t in data for t in ctx_t) \
@@ -2329,7 +2713,7 @@ def main():
         live_rows = update_tracker([], res[~res["Ticker"].isin(prev_open)] if len(res) else res, data, asof)
         live_rows += [r for r in prev if not r["Closed"]]
         try:
-            review = market_review(data, tickers, n_setups=len(found), live=True)
+            review = market_review(data, tickers, n_setups=len(found), live=True, ctx=ctx)
         except Exception as e:
             review = ""
             DIAG.append(f"Market review failed: {str(e)[:120]}")
@@ -2346,7 +2730,7 @@ def main():
     html_path = os.path.join(a.outdir, f"breakouts_{asof}.html")
     (res.drop(columns=["_b", "_s"]) if len(res) else res).to_csv(csv_path, index=False)
     try:
-        review = market_review(data, tickers, n_setups=len(found))
+        review = market_review(data, tickers, n_setups=len(found), ctx=ctx)
     except Exception as e:
         review = ""
         DIAG.append(f"Market review failed: {str(e)[:120]}")
