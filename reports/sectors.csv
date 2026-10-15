@@ -1,9 +1,9 @@
-Ticker,Sector
-ACI,Consumer Defensive
-CTC-A.TO,Consumer Cyclical
-ERIC,Technology
-FIZZ,Consumer Defensive
-GFR,Energy
-NOC,Industrials
-TVK.TO,Energy
-VEON,Communication Services
+Ticker,Sector,Industry
+ACI,Consumer Defensive,Grocery Stores
+CTC-A.TO,Consumer Cyclical,Specialty Retail
+ERIC,Technology,
+FIZZ,Consumer Defensive,
+GFR,Energy,Oil & Gas E&P
+NOC,Industrials,Aerospace & Defense
+TVK.TO,Energy,
+VEON,Communication Services,
