@@ -1134,39 +1134,107 @@ def _load_profiles(cache_path):
     return cache
 
 
+_WEB = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/124.0 Safari/537.36", "Accept": "application/json"}
+
+
+def _retry(fn, waits=(2, 6, 15)):
+    """Call fn(); on an error or an empty answer wait and try again. Returns None if every try fails."""
+    for k in range(len(waits) + 1):
+        try:
+            out = fn()
+            if out is not None and (not hasattr(out, "__len__") or len(out)):
+                return out
+        except Exception:
+            pass
+        if k < len(waits):
+            time.sleep(waits[k])
+    return None
+
+
+def _profile_backup(t, p):
+    """Fill a missing profile from Yahoo's search endpoint (name, sector, industry) and, for US stocks,
+    Nasdaq's company profile (description)."""
+    p = dict(p)
+    try:
+        js = requests.get("https://query2.finance.yahoo.com/v1/finance/search",
+                          params={"q": t, "quotesCount": 3, "newsCount": 0}, headers=_WEB, timeout=15).json()
+        hit = next((x for x in js.get("quotes", []) if x.get("symbol", "").upper() == t.upper()), None)
+        if hit:
+            p["Name"] = p.get("Name") or hit.get("longname") or hit.get("shortname") or ""
+            p["Sector"] = p.get("Sector") or hit.get("sectorDisp") or hit.get("sector") or ""
+            p["Industry"] = p.get("Industry") or hit.get("industryDisp") or hit.get("industry") or ""
+    except Exception:
+        pass
+    if region(t) == "US" and not p.get("Summary"):
+        try:
+            js = requests.get(f"https://api.nasdaq.com/api/company/{t.replace('-', '.')}/company-profile",
+                              headers=_WEB, timeout=15).json().get("data") or {}
+            val = lambda k: ((js.get(k) or {}).get("value") or "").strip()
+            p["Name"] = p.get("Name") or val("CompanyName")
+            p["Summary"] = " ".join(val("CompanyDescription").split())
+            p["Website"] = p.get("Website") or val("CompanyUrl")
+            p["Country"] = p.get("Country") or ""
+        except Exception:
+            pass
+    return p
+
+
+def _nasdaq_earnings(t):
+    """Next earnings date from Nasdaq (US stocks), used when Yahoo has none."""
+    try:
+        js = requests.get(f"https://api.nasdaq.com/api/analyst/{t.replace('-', '.')}/earnings-date",
+                          headers=_WEB, timeout=15).json().get("data") or {}
+        m = re.search(r"([A-Z][a-z]{2,8}\.? \d{1,2}, \d{4})", str(js.get("announcement") or ""))
+        return pd.Timestamp(m.group(1).replace(".", "")).date() if m else None
+    except Exception:
+        return None
+
+
 def fetch_sector_earnings(tickers, cache_path, profile_only=()):
     """Company profile (cached) and next earnings date for the candidates; profile only for `profile_only`
     (tickers already in the tracker). Profiles fill PROFILES so every card can say what the company does."""
+    # Yahoo throttles these calls right after the 6,000-stock price download (the 16 Oct run got 0 of 30),
+    # so each call is retried with pauses, and two backup sources fill what Yahoo won't give.
     import yfinance as yf
     cache = _load_profiles(cache_path)
     sectors, industries, earnings = {}, {}, {}
     today = dt.date.today()
     want = list(dict.fromkeys(list(tickers) + [t for t in profile_only if t not in tickers]))
+    src = {"yahoo": 0, "backup": 0, "none": 0}
+    fails = 0                                             # after 3 straight Yahoo failures, stop waiting on it
     for t in want:
+        waits = (2, 6, 15) if fails < 3 else ()
         tk = yf.Ticker(t)
         p = cache.get(t) or {}
-        if not p.get("Sector") or not p.get("Name"):      # fetch once, then reuse the cached profile
-            try:
-                info = tk.get_info() or {}
-                p = {"Sector": info.get("sector", "") or "", "Industry": info.get("industry", "") or "",
-                     "Name": info.get("longName") or info.get("shortName") or "",
-                     "Country": info.get("country", "") or "", "Website": info.get("website", "") or "",
-                     "Summary": " ".join(str(info.get("longBusinessSummary", "") or "").split())}
-            except Exception:
-                p = {**{c: "" for c in PROFILE_COLS[1:]}, **p}
+        if not p.get("Name") or not p.get("Summary"):     # fetch once, then reuse the cached profile
+            info = _retry(lambda: tk.get_info() or {}, waits) or {}
+            fails = 0 if info.get("longName") or info.get("shortName") else fails + 1
+            q = {"Sector": info.get("sector", "") or "", "Industry": info.get("industry", "") or "",
+                 "Name": info.get("longName") or info.get("shortName") or "",
+                 "Country": info.get("country", "") or "", "Website": info.get("website", "") or "",
+                 "Summary": " ".join(str(info.get("longBusinessSummary", "") or "").split())}
+            if q["Name"] and q["Summary"]:
+                src["yahoo"] += 1
+            else:
+                q = _profile_backup(t, q)
+                src["backup" if q.get("Name") else "none"] += 1
+            p = {c: q.get(c) or p.get(c, "") for c in PROFILE_COLS[1:]}
             cache[t] = p
         PROFILES[t] = p
         if t not in tickers:
             continue
         sectors[t], industries[t] = p.get("Sector") or None, p.get("Industry") or None
-        try:
-            cal = tk.calendar
-            dates = cal.get("Earnings Date", []) if isinstance(cal, dict) else []
-            fut = sorted(pd.Timestamp(x).date() for x in dates if pd.Timestamp(x).date() >= today)
-            if fut:
-                earnings[t] = fut[0]
-        except Exception:
-            pass
+        cal = _retry(lambda: tk.calendar, (2, 6) if fails < 3 else ())
+        dates = cal.get("Earnings Date", []) if isinstance(cal, dict) else []
+        fut = sorted(pd.Timestamp(x).date() for x in dates if pd.Timestamp(x).date() >= today)
+        if not fut and region(t) == "US":
+            d = _nasdaq_earnings(t)
+            fut = [d] if d and d >= today else []
+        if fut:
+            earnings[t] = fut[0]
+    DIAG.append(f"Company profiles fetched: {src['yahoo']} from Yahoo, {src['backup']} from backup sources, "
+                f"{src['none']} not found ({len(want) - sum(src.values())} already cached)")
     if cache_path:
         pd.DataFrame([{"Ticker": k, **{c: v.get(c, "") for c in PROFILE_COLS[1:]}} for k, v in sorted(cache.items())],
                      columns=PROFILE_COLS).to_csv(cache_path, index=False)
