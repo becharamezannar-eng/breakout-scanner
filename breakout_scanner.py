@@ -43,7 +43,9 @@ This is a technical screen, not investment advice. Always check the chart.
 import argparse
 import base64
 import datetime as dt
+import html as html_mod
 import io
+import re
 import os
 import sys
 import time
@@ -1115,30 +1117,48 @@ CHECKLIST_LABELS = [
 ]
 
 
-def fetch_sector_earnings(tickers, cache_path):
-    """Sector and industry (cached) and next earnings date - for the candidates only."""
-    import yfinance as yf
+PROFILE_COLS = ["Ticker", "Sector", "Industry", "Name", "Country", "Website", "Summary"]
+PROFILES = {}   # ticker -> company profile (name, sector, industry, country, website, business summary)
+
+
+def _load_profiles(cache_path):
+    """Company profiles cached in reports/sectors.csv (older files only have Ticker, Sector, Industry)."""
     cache = {}
     if cache_path and os.path.exists(cache_path):
         try:
             cdf = pd.read_csv(cache_path, dtype=str, keep_default_na=False)
-            for row in cdf.itertuples(index=False):
-                cache[row[0]] = (row[1], row[2] if len(row) > 2 else "")
+            for rec in cdf.to_dict("records"):
+                cache[rec.get("Ticker", "")] = {c: rec.get(c, "") or "" for c in PROFILE_COLS[1:]}
         except Exception:
             cache = {}
+    return cache
+
+
+def fetch_sector_earnings(tickers, cache_path, profile_only=()):
+    """Company profile (cached) and next earnings date for the candidates; profile only for `profile_only`
+    (tickers already in the tracker). Profiles fill PROFILES so every card can say what the company does."""
+    import yfinance as yf
+    cache = _load_profiles(cache_path)
     sectors, industries, earnings = {}, {}, {}
     today = dt.date.today()
-    for t in tickers:
+    want = list(dict.fromkeys(list(tickers) + [t for t in profile_only if t not in tickers]))
+    for t in want:
         tk = yf.Ticker(t)
-        sec, ind = cache.get(t, ("", ""))
-        if not sec or not ind:
+        p = cache.get(t) or {}
+        if not p.get("Sector") or not p.get("Name"):      # fetch once, then reuse the cached profile
             try:
                 info = tk.get_info() or {}
-                sec, ind = info.get("sector", "") or "", info.get("industry", "") or ""
+                p = {"Sector": info.get("sector", "") or "", "Industry": info.get("industry", "") or "",
+                     "Name": info.get("longName") or info.get("shortName") or "",
+                     "Country": info.get("country", "") or "", "Website": info.get("website", "") or "",
+                     "Summary": " ".join(str(info.get("longBusinessSummary", "") or "").split())}
             except Exception:
-                pass
-            cache[t] = (sec, ind)
-        sectors[t], industries[t] = sec or None, ind or None
+                p = {**{c: "" for c in PROFILE_COLS[1:]}, **p}
+            cache[t] = p
+        PROFILES[t] = p
+        if t not in tickers:
+            continue
+        sectors[t], industries[t] = p.get("Sector") or None, p.get("Industry") or None
         try:
             cal = tk.calendar
             dates = cal.get("Earnings Date", []) if isinstance(cal, dict) else []
@@ -1148,9 +1168,41 @@ def fetch_sector_earnings(tickers, cache_path):
         except Exception:
             pass
     if cache_path:
-        pd.DataFrame([(k, a, b) for k, (a, b) in sorted(cache.items())],
-                     columns=["Ticker", "Sector", "Industry"]).to_csv(cache_path, index=False)
+        pd.DataFrame([{"Ticker": k, **{c: v.get(c, "") for c in PROFILE_COLS[1:]}} for k, v in sorted(cache.items())],
+                     columns=PROFILE_COLS).to_csv(cache_path, index=False)
     return sectors, industries, earnings
+
+
+def _short_summary(text, limit=320):
+    """First one or two sentences of the business summary, cut at ~320 characters."""
+    text = (text or "").strip()
+    out = ""
+    for i, s in enumerate(re.split(r"(?<=[a-z0-9\)]\.)\s+(?=[A-Z])", text)):
+        if out and (i >= 2 or len(out) + len(s) + 1 > limit):
+            break
+        out = f"{out} {s}".strip()
+    return out if out and len(out) <= limit else text[:limit].rsplit(" ", 1)[0] + "…"
+
+
+def company_html(ticker, full=True):
+    """Who the company is: full name, industry, country and what it does (from Yahoo Finance's profile)."""
+    p = PROFILES.get(ticker) or {}
+    name = p.get("Name") or ""
+    if not name and not p.get("Industry"):
+        return ""
+    e = html_mod.escape
+    where = " · ".join(x for x in (p.get("Industry"), p.get("Sector"), p.get("Country")) if x)
+    out = f'<div class="co"><p class="coname"><b>{e(name or ticker)}</b>{f" <span>{e(where)}</span>" if where else ""}</p>'
+    summ = p.get("Summary") or ""
+    if summ:
+        short = _short_summary(summ)
+        out += f'<p class="codesc">{e(short)}</p>'
+        if full and len(short) < len(summ):
+            site = p.get("Website") or ""
+            link = (f' <a href="{e(site)}" target="_blank" rel="noopener">Company website</a>'
+                    if site.startswith("http") else "")
+            out += f'<details><summary>More about the company</summary><p class="codesc">{e(summ)}{link}</p></details>'
+    return out + "</div>"
 
 
 STRESS_TICKERS = ["HYG", "IEF", "KBE", "SI=F", "TIP"]   # credit, Treasuries, banks, silver, real-yield proxy
@@ -1900,6 +1952,7 @@ def card_html(r, chart=None, compact=False):
     return f"""<article class="card" id="t-{r['Ticker']}" style="--c:{color}">
   <header><div><h3>{r['Ticker']} {score_html}</h3><p class="sub">{r['Pattern']} &middot; {r['Indexes']}</p></div>
   <div class="right"><span class="badge">{label}{' &middot; new' if new else ''}</span><p class="px">{_f(r['LastClose'])}</p></div></header>
+  {company_html(r['Ticker'], full=not compact)}
   <p class="do">{instruction(r)}</p>
   {'' if compact else f'<div class="facts">{facts_html}</div>'}
   {warn_html and f'<div class="flags"><span class="wl">{len(warns)} warning{"s" if len(warns) != 1 else ""}:</span>{warn_html}</div>'}
@@ -1961,7 +2014,11 @@ def write_html(path, asof, rows, res, data, ctx, n_scanned, review_html="", titl
         sc = f'<span class="score g{g}">{_num(r.get("Score")):.0f}</span>' if g else "-"
         nw = int(_num(r.get("NWarn"), 0)) if g else "-"
         ed = r.get("EarningsDate") if isinstance(r.get("EarningsDate"), str) and r.get("EarningsDate") else "-"
+        p = PROFILES.get(r["Ticker"]) or {}
+        co = html_mod.escape(p.get("Name") or "-")
+        ind = html_mod.escape(p.get("Industry") or p.get("Sector") or (r.get("Sector") if isinstance(r.get("Sector"), str) else "") or "-")
         return (f'<tr><td class="tk"><a href="#t-{r["Ticker"]}">{r["Ticker"]}</a></td>'
+                f'<td class="cn">{co}</td><td class="cn">{ind}</td>'
                 f'<td><span class="chip" style="--c:{color}">{label}</span></td><td>{sc}</td>'
                 f'<td>{r["Pattern"]}</td><td>{r["Category"]}</td><td>{_f(r["LastClose"])}</td>'
                 f'<td>{_f(r["Resistance"])}</td><td>{above:+.1f}%</td><td>{r["VolX"]}x</td><td>{base}</td>'
@@ -1970,7 +2027,7 @@ def write_html(path, asof, rows, res, data, ctx, n_scanned, review_html="", titl
 
     summary = ("<section><h2>Summary</h2><p class=\"hint\">Every setup being tracked. Tap a ticker for its card and chart; "
                "swipe the table sideways for more columns.</p><div class=\"wrap\"><table class=\"sum\"><tr>"
-               "<th class=\"tk\">Ticker</th><th>Action</th><th>Score</th><th>Pattern</th><th>Type</th><th>Close</th>"
+               "<th class=\"tk\">Ticker</th><th>Company</th><th>Industry</th><th>Action</th><th>Score</th><th>Pattern</th><th>Type</th><th>Close</th>"
                "<th>Breakout level</th><th>Above level</th><th>Volume</th><th>Base</th><th>Stop</th><th>Target</th>"
                "<th>R:R</th><th>Warnings</th><th>P&amp;L</th><th>Earnings</th><th>Breakout date</th><th>Index</th></tr>"
                + "".join(sum_row(r) for r in act) + "</table></div></section>") if act else ""
@@ -2043,6 +2100,10 @@ h1{{font-size:22px;margin:4px 0 2px}} h2{{font-size:17px;margin:26px 0 2px}} h3{
 .badge{{background:var(--c);color:#fff;font-weight:700;font-size:13px;padding:4px 10px;border-radius:8px;white-space:nowrap}}
 .px{{font-size:18px;font-weight:600;margin:6px 0 0}}
 .do{{margin:10px 0;font-size:15px}}
+.co{{background:var(--bg);border-radius:8px;padding:8px 10px;margin:10px 0 0;font-size:13px}}
+.co p{{margin:0}} .coname span{{color:var(--muted);font-size:12px;display:block}} .codesc{{margin-top:4px!important;line-height:1.45}}
+.co details{{margin-top:4px}} .co a{{color:var(--ink)}}
+td.cn{{white-space:normal;min-width:150px;max-width:220px}}
 .facts{{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-size:13px}}
 .facts div{{background:var(--bg);border-radius:8px;padding:6px 8px}} .facts span{{display:block;color:var(--muted);font-size:11px}}
 .flags{{margin-top:8px}} .flag{{display:inline-block;font-size:12px;color:#a15c00;background:#a15c0018;border-radius:6px;padding:2px 8px;margin:2px 4px 0 0}}
@@ -2218,6 +2279,7 @@ def morning_check(outdir, force=False):
     except Exception as e:
         print("Intraday download failed:", e)
         intr = {}
+    PROFILES.update(_load_profiles(os.path.join(outdir, "sectors.csv")))   # company names from last night's scan
     cards = []
     order = {"ENTER": 0, "STOPPED": 1, "WAIT": 2, "SKIP": 3, "FAILING": 4, "HOLDING": 5, "OK": 6}
     items = []
@@ -2245,7 +2307,7 @@ def morning_check(outdir, force=False):
         label = STATUS_INFO.get(r["Status"], (r["Status"],))[0]
         cards.append(f'<article class="card" style="--c:{color}"><header><h3>{r["Ticker"]} '
                      f'<small class="hint">{label} from last night</small></h3><span class="badge">{verdict}</span></header>'
-                     f'<p>{text}</p><div class="facts">{facts}</div></article>')
+                     f'{company_html(r["Ticker"], full=False)}<p>{text}</p><div class="facts">{facts}</div></article>')
     stamp = items[0][2]["time"] if items and items[0][2] else now.strftime("%H:%M ET")
     html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Morning check {now:%Y-%m-%d}</title>
@@ -2634,9 +2696,15 @@ def _tracker_selftest():
     try:
         import tempfile
         rows = update_tracker([], res, {"TEST": d0}, asof)
+        PROFILES["TEST"] = {"Name": "Test Corp & Co.", "Sector": "Industrials", "Industry": "Aerospace & Defense",
+                            "Country": "Canada", "Website": "https://example.com",
+                            "Summary": "Test Corp designs aircraft parts. It sells to airlines worldwide. " * 6}
         with tempfile.TemporaryDirectory() as td:
             write_html(os.path.join(td, "t.html"), asof, rows, res, {"TEST": d0}, [], 1)
-        print("report  : renders")
+            page = open(os.path.join(td, "t.html"), encoding="utf-8").read()
+        PROFILES.pop("TEST", None)
+        assert "Test Corp &amp; Co." in page and "Aerospace &amp; Defense" in page and "More about the company" in page
+        print("report  : renders (with company profile)")
     except Exception as e:
         print("report  : FAILED", e); ok = False
     return ok
@@ -2744,8 +2812,9 @@ def main():
     # market context: benchmark trend, breadth (from the whole universe), sector ETFs
     ctx = build_context(data, tickers)
     try:
-        sectors, industries, earnings = fetch_sector_earnings([r["Ticker"] for r, _ in found],
-                                                              os.path.join(a.outdir, "sectors.csv"))
+        sectors, industries, earnings = fetch_sector_earnings(
+            [r["Ticker"] for r, _ in found], os.path.join(a.outdir, "sectors.csv"),
+            profile_only=[r["Ticker"] for r in rows if not r["Closed"]])   # names for names already tracked
     except Exception as e:
         sectors, industries, earnings = {}, {}, {}
         DIAG.append(f"Sector/earnings lookup failed: {str(e)[:120]}")
