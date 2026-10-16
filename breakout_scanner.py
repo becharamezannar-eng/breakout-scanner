@@ -2879,10 +2879,12 @@ def main():
 
     # market context: benchmark trend, breadth (from the whole universe), sector ETFs
     ctx = build_context(data, tickers)
+    recent = (dt.date.today() - dt.timedelta(days=5)).isoformat()
     try:
         sectors, industries, earnings = fetch_sector_earnings(
             [r["Ticker"] for r, _ in found], os.path.join(a.outdir, "sectors.csv"),
-            profile_only=[r["Ticker"] for r in rows if not r["Closed"]])   # names for names already tracked
+            profile_only=[r["Ticker"] for r in rows                         # names already tracked, incl. ones
+                          if not r["Closed"] or str(r["StatusSince"]) >= recent])  # closed in the last few days
     except Exception as e:
         sectors, industries, earnings = {}, {}, {}
         DIAG.append(f"Sector/earnings lookup failed: {str(e)[:120]}")
