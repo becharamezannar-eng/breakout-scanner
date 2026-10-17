@@ -2140,7 +2140,8 @@ def card_html(r, chart=None, compact=False):
 
 
 def load_holdings(path):
-    """Your own positions (reports/holdings.csv): Ticker, Name, Shares, AvgCost, Currency, Type (trade/hold), Note."""
+    """Your own positions (reports/holdings.csv): Ticker, Name, Shares, AvgCost, Currency, Type (trade/hold), Note,
+    TrendTicker (optional: read the trend from another listing, e.g. a CDR's US shares)."""
     if not path or not os.path.exists(path):
         return []
     try:
@@ -2200,8 +2201,15 @@ def portfolio_html(holdings, data, rows, usdcad=np.nan):
                     f'target <b>{_f(_num(r.get("Target")))}</b>.')
             line = np.nan
         else:
-            label, color, what, line = holding_status(d)
-            if np.isfinite(line):
+            tt = str(h.get("TrendTicker") or "").strip()      # e.g. a CDR read through its US shares
+            td = data.get(tt) if tt else None
+            src = td if td is not None and len(td) > 220 else d
+            label, color, what, line = holding_status(src)
+            if src is not d:
+                what = f"Trend read from {e(tt)} (this listing has too little history). " + what
+            elif np.isfinite(line) and c < line:
+                what += f' It has already closed under its short-term trend line (<b>{_f(line)}</b>).'
+            elif np.isfinite(line):
                 what += f' A close below <b>{_f(line)}</b> would end the short-term uptrend.'
         pnl_txt = f'<em class="{"up" if pnl >= 0 else "dn"}">{pnl:+.1f}%</em>' if np.isfinite(pnl) else "-"
         facts = "".join(f"<div><span>{k}</span><b>{v}</b></div>" for k, v in [
@@ -3096,7 +3104,7 @@ def main():
     rows = load_tracker(tracker_path)
     tracked = {r["Ticker"] for r in rows if not r["Closed"]}
     holdings = load_holdings(os.path.join(a.outdir, "holdings.csv"))
-    tracked |= {str(h["Ticker"]).strip() for h in holdings}
+    tracked |= {str(h[k]).strip() for h in holdings for k in ("Ticker", "TrendTicker") if str(h.get(k) or "").strip()}
     ctx_t = ["SPY", "DIA", "QQQ", "IWM", "XIU.TO"]
     raw = download(sorted(set(tickers) | set(ctx_t) | tracked | set(ALL_SECTOR_ETFS) | set(MACRO_TICKERS) | set(STRESS_TICKERS),
                           key=lambda t: (region(t) != "CA", t)))   # TSX first, so any late data trouble hits US names
