@@ -2023,7 +2023,7 @@ def _size_line(r):
     if not np.isfinite(sh) or sh <= 0 or not np.isfinite(rps):
         return ""
     if r.get("Source") == "manual":
-        return (f" Your position: <b>{sh:g} shares at {_f(r['EntryPrice'])}</b> "
+        return (f" Your position: <b>{f'{sh:,.4f}'.rstrip('0').rstrip('.')} shares at {_f(r['EntryPrice'])}</b> "
                 f"(${sh * r['EntryPrice']:,.0f}; risking ${sh * rps:,.0f} to the original stop).")
     return (f" Size: <b>{int(sh)} shares</b> (risking {_f(rps)}/share = ${sh * rps:,.0f}, "
             f"{ACCOUNT['risk_pct'] * 100:.1f}% of a ${ACCOUNT['size']:,} account).")
@@ -2139,6 +2139,88 @@ def card_html(r, chart=None, compact=False):
 </article>"""
 
 
+def load_holdings(path):
+    """Your own positions (reports/holdings.csv): Ticker, Name, Shares, AvgCost, Currency, Type (trade/hold), Note."""
+    if not path or not os.path.exists(path):
+        return []
+    try:
+        return pd.read_csv(path, dtype={"Ticker": str}, keep_default_na=False).to_dict("records")
+    except Exception as e:
+        DIAG.append(f"holdings.csv unreadable: {str(e)[:100]}")
+        return []
+
+
+def holding_status(d):
+    """Trend read for a long-term holding (ETF or stock you keep, not a breakout trade)."""
+    c, s50, s200 = d["Close"].iloc[-1], d["SMA50"].iloc[-1], d["SMA200"].iloc[-1]
+    atr = d["ATR14"].iloc[-1]
+    rising200 = len(d) > 220 and s200 > d["SMA200"].iloc[-21]
+    # chandelier-style line: highest close of the last 22 sessions minus 3 ATR - a close under it ends the short-term uptrend
+    line = d["Close"].iloc[-22:].max() - 3 * atr if np.isfinite(atr) else np.nan
+    if not np.isfinite(s200):
+        return "Not enough history", "#6b6b6b", "", line
+    if c > s50 > s200 and rising200:
+        return "Uptrend - hold", "#16794a", "Above its rising 50- and 200-day averages.", line
+    if c > s200:
+        return ("Pullback - watch", "#a15c00", "Below its 50-day average but above the 200-day: a normal dip "
+                "unless it keeps falling.", line) if c < s50 else \
+               ("Recovering - hold", "#3d4a5c", "Above both averages; the long-term trend is still turning up.", line)
+    return ("Below 200-day - review", "#b42318", "Under its 200-day average: the long-term trend is down. "
+            "Decide whether you still want to own it here.", line)
+
+
+def portfolio_html(holdings, data, rows, usdcad=np.nan):
+    """'Your portfolio' section: value, P&L and a trend read for each of your positions."""
+    if not holdings:
+        return ""
+    e = html_mod.escape
+    open_rows = {r["Ticker"]: r for r in rows if not r["Closed"]}
+    cards, tot_cad, cost_cad = [], 0.0, 0.0
+    for h in holdings:
+        t = str(h["Ticker"]).strip()
+        sh, cost, cur = _num(h.get("Shares")), _num(h.get("AvgCost")), (h.get("Currency") or "CAD").upper()
+        p = PROFILES.get(t) or {}
+        name = h.get("Name") or p.get("Name") or t
+        d = data.get(t)
+        if d is None or not len(d):
+            cards.append(f'<article class="card" style="--c:#6b6b6b"><header><div><h3>{e(t)}</h3>'
+                         f'<p class="sub">{e(name)}</p></div></header><p class="do">No price data today.</p></article>')
+            continue
+        c = float(d["Close"].iloc[-1])
+        chg1 = _chg(d, 1)
+        val, pnl = sh * c, (c / cost - 1) * 100 if cost > 0 else np.nan
+        fx = usdcad if cur == "USD" else 1.0
+        if np.isfinite(fx):
+            tot_cad += val * fx
+            cost_cad += sh * cost * fx
+        if h.get("Type") == "trade" and t in open_rows:
+            r = open_rows[t]
+            label, color, _ = STATUS_INFO.get(r["Status"], (r["Status"], "#555", ""))
+            what = (f'Managed as a breakout trade - see its card below. Stop <b>{_f(_num(r.get("Stop")))}</b>, '
+                    f'target <b>{_f(_num(r.get("Target")))}</b>.')
+            line = np.nan
+        else:
+            label, color, what, line = holding_status(d)
+            if np.isfinite(line):
+                what += f' A close below <b>{_f(line)}</b> would end the short-term uptrend.'
+        pnl_txt = f'<em class="{"up" if pnl >= 0 else "dn"}">{pnl:+.1f}%</em>' if np.isfinite(pnl) else "-"
+        facts = "".join(f"<div><span>{k}</span><b>{v}</b></div>" for k, v in [
+            ("Shares", f"{sh:,.4f}".rstrip("0").rstrip(".")), ("Avg cost", f"{_f(cost)} {cur}"), ("Value", f"{val:,.0f} {cur}"),
+            ("Total return", pnl_txt), ("Today", f"{chg1:+.2f}%" if np.isfinite(chg1) else "-"),
+            ("50 / 200-day", f'{_f(d["SMA50"].iloc[-1])} / {_f(d["SMA200"].iloc[-1])}')])
+        note = f'<p class="hint">{e(h["Note"])}</p>' if h.get("Note") else ""
+        cards.append(f'<article class="card" style="--c:{color}"><header><div><h3>{e(t)}</h3>'
+                     f'<p class="sub">{e(name)}</p></div><div class="right"><span class="badge">{label}</span>'
+                     f'<p class="px">{_f(c)}</p></div></header><p class="do">{what}</p>'
+                     f'<div class="facts">{facts}</div>{note}</article>')
+    tot = (f'<p class="hint">Total about <b>${tot_cad:,.0f} CAD</b> '
+           f'({(tot_cad / cost_cad - 1) * 100:+.1f}% vs cost; USD converted at {usdcad:.4f}).</p>'
+           if cost_cad > 0 and np.isfinite(usdcad) else "")
+    return (f'<section><h2>Your portfolio</h2><p class="hint">Your own positions from <code>holdings.csv</code>. '
+            f'ETFs and long-term holdings get a trend read (50- and 200-day averages); breakout trades follow the '
+            f'tracker rules. Trend signals only, not advice.</p>{tot}{"".join(cards)}</section>')
+
+
 def radar_html(radar):
     """'On the radar' table: names coiling just under resistance, with the price that would trigger a breakout."""
     if not radar:
@@ -2171,7 +2253,7 @@ def radar_html(radar):
 
 
 def write_html(path, asof, rows, res, data, ctx, n_scanned, review_html="", title="Breakout Scan", subtitle=None,
-               radar=None):
+               radar=None, portfolio=""):
     asof_txt = pd.Timestamp(asof).strftime("%a %b %d, %Y")
     act = [r for r in rows if not r["Closed"] or r["StatusSince"] == asof]
     order = {"SELL": 0, "TAKE PROFIT": 1, "BUY": 2, "WATCH": 3, "EXTENDED": 4, "HOLD": 5, "TRAIL": 6, "DROP": 7}
@@ -2346,6 +2428,7 @@ ul.ck b{{display:inline-block;width:20px}} .ok{{color:var(--up)}} .no{{color:var
 <p class="links"><a href="index.html">Latest scan</a> &middot; <a href="live.html">Live preview</a> &middot; <a href="morning.html">Morning check</a> &middot; <a href="backtest.html">Backtest</a> &middot; <a href="archive.html">Past scans</a></p>
 <h2>Setups</h2>
 <div class="chips">{chips}</div>
+{portfolio}
 {summary}
 {section("Act at tomorrow's open", "New buys, profit-taking and exits.", do_now, empty="No action needed tomorrow.")}
 {section("Watchlist", "Broke out but not confirmed yet, or too far above the breakout level to buy.", watch, empty="Nothing on watch.")}
@@ -3012,6 +3095,8 @@ def main():
     tracker_path = os.path.join(a.outdir, "tracker.csv")
     rows = load_tracker(tracker_path)
     tracked = {r["Ticker"] for r in rows if not r["Closed"]}
+    holdings = load_holdings(os.path.join(a.outdir, "holdings.csv"))
+    tracked |= {str(h["Ticker"]).strip() for h in holdings}
     ctx_t = ["SPY", "DIA", "QQQ", "IWM", "XIU.TO"]
     raw = download(sorted(set(tickers) | set(ctx_t) | tracked | set(ALL_SECTOR_ETFS) | set(MACRO_TICKERS) | set(STRESS_TICKERS),
                           key=lambda t: (region(t) != "CA", t)))   # TSX first, so any late data trouble hits US names
@@ -3063,7 +3148,8 @@ def main():
             [r["Ticker"] for r, _ in found], os.path.join(a.outdir, "sectors.csv"),
             profile_only=[r["Ticker"] for r in rows                         # names already tracked, incl. ones
                           if not r["Closed"] or str(r["StatusSince"]) >= recent]   # closed in the last few days,
-                         + [x["Ticker"] for x in radar])                            # and the radar
+                         + [x["Ticker"] for x in radar]                             # the radar
+                         + [str(h["Ticker"]).strip() for h in holdings])            # and your holdings
     except Exception as e:
         sectors, industries, earnings = {}, {}, {}
         DIAG.append(f"Sector/earnings lookup failed: {str(e)[:120]}")
@@ -3126,7 +3212,9 @@ def main():
     except Exception as e:
         review = ""
         DIAG.append(f"Market review failed: {str(e)[:120]}")
-    write_html(html_path, asof, rows, res, data, market_context(data), len(data), review, radar=radar)
+    usdcad = float(data["CAD=X"]["Close"].iloc[-1]) if "CAD=X" in data else np.nan
+    write_html(html_path, asof, rows, res, data, market_context(data), len(data), review, radar=radar,
+               portfolio=portfolio_html(holdings, data, rows, usdcad))
 
     print(f"\n{len(res)} new setups (scanned {len(data)} tickers in {time.time() - t0:.0f}s), close of {asof}\n")
     live = [r for r in rows if not r["Closed"] or r["StatusSince"] == asof]
