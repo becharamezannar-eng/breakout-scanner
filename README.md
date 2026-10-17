@@ -11,6 +11,11 @@ looking for volume-confirmed breakouts out of tight consolidations
   or Actions tab → *Daily breakout scan* → *Run workflow*. During market hours a manual scan writes `live.html`
   (today's volume projected to a full day) and leaves the tracker untouched.
 - **Market review:** top of every report - indexes, VIX, 10-yr yield, USD/CAD, oil, gold, breadth, sectors and a market stance.
+- **Canada first:** TSX names are downloaded, analysed and listed first in every section (with a CAD 3M/day
+  liquidity floor instead of USD 5M), and the report keeps the top 40 new setups per market so US names still appear.
+- **On the radar:** stocks closing within 3% under a flat resistance that haven't broken out yet, with the trigger
+  price and the volume needed - set price alerts there. A breakout that was on the radar says since when.
+- **Catch-up:** a breakout missed on its day (skipped scan, data gap) is still picked up for 3 sessions if it held every day.
 - **Tracker:** `reports/tracker.csv` follows every setup day to day:
   Watch → Buy (or Don't chase) → Hold → Take profit → Hold-trailing → Sell, or Drop if it fails before entry.
 

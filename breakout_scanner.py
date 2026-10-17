@@ -2156,12 +2156,12 @@ def radar_html(radar):
 
     ca = [f for f in radar if f["Region"] == "CA"]
     us = [f for f in radar if f["Region"] != "CA"]
-    head = ('<tr><th class="tk">Ticker</th><th>Company</th><th>Close</th><th>Breaks out on a close above</th>'
+    head = ('<tr><th class="tk">Ticker</th><th>Company</th><th>Close</th><th>Trigger</th>'
             '<th>Away</th><th>Volume needed</th><th>Base</th><th>On radar since</th><th>Why it looks ready</th></tr>')
     tbl = lambda xs, name: (f'<h4>{name} ({len(xs)})</h4><div class="wrap"><table class="sum">{head}'
                             + "".join(row(f) for f in xs) + "</table></div>") if xs else ""
     return ('<section><h2>On the radar: close to breaking out</h2><p class="hint">Tight bases closing within 3% under a '
-            'flat top, not broken out yet. <b>Not a buy</b>: it becomes a setup only if it closes above the trigger on '
+            'flat top, not broken out yet. <b>Not a buy</b>: it becomes a setup only if it closes above the <b>trigger</b> on '
             'the volume shown (1.5x its 50-day average), then holds the next day. Set a price alert at the trigger. '
             'Canada first, ranked by how ready the base looks.</p>'
             + tbl(ca, "Canada") + tbl(us, "United States") + "</section>")
