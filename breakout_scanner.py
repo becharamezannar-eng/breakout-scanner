@@ -796,6 +796,48 @@ def analyze(d, A=None, min_dv=None):
     return r
 
 
+RADAR_PREV = {}   # ticker -> (first seen, trigger) from earlier scans, to tell a breakout it was flagged in advance
+
+
+def radar_merge(radar, path, save=True):
+    """Keep the first date each name appeared on the radar, rank (Canada first, then readiness) and cap per market.
+    radar.csv also remembers names from the last 10 days so a breakout can say how early it was flagged."""
+    today = max([pd.Timestamp(f["Date"]).date() for f in radar] or [dt.datetime.now(ET).date()])   # session date
+    old = {}
+    if path and os.path.exists(path):
+        try:
+            for x in pd.read_csv(path, dtype=str, keep_default_na=False).to_dict("records"):
+                old[x["Ticker"]] = x
+        except Exception:
+            old = {}
+    RADAR_PREV.clear()
+    for t, x in old.items():
+        try:
+            if (today - pd.Timestamp(x["LastSeen"]).date()).days <= 10:
+                RADAR_PREV[t] = (x["FirstSeen"], _num(x.get("Trigger")))
+        except Exception:
+            pass
+    for f in radar:
+        prev = old.get(f["Ticker"])
+        recent = prev and (today - pd.Timestamp(prev["LastSeen"]).date()).days <= 7
+        f["FirstSeen"] = prev["FirstSeen"] if recent else today.isoformat()
+        f["LastSeen"] = today.isoformat()
+    radar.sort(key=lambda f: (f["Region"] != "CA", -f["Readiness"], f["DistPct"]))
+    kept, n = [], {"CA": 0, "US": 0}
+    for f in radar:
+        if n[f["Region"]] < CFG["radar_max"]:
+            kept.append(f)
+            n[f["Region"]] += 1
+    if save and path:
+        rows = {f["Ticker"]: dict(Ticker=f["Ticker"], FirstSeen=f["FirstSeen"], LastSeen=f["LastSeen"],
+                                  Trigger=f["Trigger"]) for f in radar}
+        for t, x in old.items():               # remember recent names that dropped off (broke out, or faded)
+            if t not in rows and t in RADAR_PREV:
+                rows[t] = x
+        pd.DataFrame(list(rows.values()), columns=["Ticker", "FirstSeen", "LastSeen", "Trigger"]).to_csv(path, index=False)
+    return kept
+
+
 def check_forming(d, A, min_dv=None):
     """'On the radar': a tight base whose close sits just under a flat top that hasn't broken yet.
     Gives the trigger price days ahead, so a breakout like Loblaw's (16 Oct 2026: it climbed inside its
@@ -837,7 +879,7 @@ def check_forming(d, A, min_dv=None):
         up5 = bool(c > C[n - 5])
         ready = (3 * (1 - dist / CFG["radar_dist"]) + 2 * higher_lows + 2 * tightening
                  + (1 if quiet < 1.0 else 0) + 2 * uptrend)
-        return dict(Trigger=round(trigger, 2), Resistance=round(R, 2), Close=round(c, 2), DistPct=round(dist * 100, 1),
+        return dict(Date=pd.Timestamp(d.index[n]).date().isoformat(), Trigger=round(trigger, 2), Resistance=round(R, 2), Close=round(c, 2), DistPct=round(dist * 100, 1),
                     BaseLen=Lb, BaseDepthPct=round(depth * 100, 1), Touches=touches, HigherLows=bool(higher_lows),
                     Tightening=tightening, QuietVol=round(quiet, 2), Uptrend=uptrend, Rising5d=up5,
                     VolNeeded=int(np.ceil(CFG["min_vol_ratio"] * avgv)), Readiness=round(ready, 1))
@@ -1533,10 +1575,13 @@ def update_tracker(rows, res, data, asof):
             step_row(row, dts[i].isoformat(), *d[["Open", "High", "Low", "Close"]].iloc[i].tolist(), n_held)
 
     open_now = {r["Ticker"] for r in rows if not r["Closed"]}
+    seen = {(r["Ticker"], str(r["BreakoutDate"])) for r in rows}     # a late catch must not revive a closed setup
     keep = [k for k in TRACK_COLS if k not in ("Status", "StatusSince", "Stop", "Target", "EntryDate", "EntryPrice",
                                                "LastClose", "HighClose", "PnLPct", "LastDate", "Note", "Closed")]
     for _, r in res.iterrows():
         if r["Ticker"] in open_now or _num(r.get("Score"), 0) < CFG["score_watch"]:
+            continue
+        if (r["Ticker"], str(r["BreakoutDate"])) in seen:
             continue
         row = {k: np.nan for k in TRACK_COLS}
         row.update({k: r[k] for k in keep if k in r})
@@ -1546,7 +1591,9 @@ def update_tracker(rows, res, data, asof):
             row["Stop"], row["Target"] = r["Stop"], r["Target"]
             _set(row, "WATCH", asof, f"Broke out on {r['VolX']}x volume - must hold tomorrow")
         else:
-            _qualify(row, asof, r["Close"], "Broke out and held the next day", held_bonus=0.0)
+            late = int(_num(r.get("LateDays"), 0))
+            _qualify(row, asof, r["Close"], f"Broke out {late} sessions ago (missed then) and has held every day since"
+                     if late else "Broke out and held the next day", held_bonus=0.0)
         rows.append(row)
     for row in rows:
         row.pop("_watch_only", None)
@@ -2089,11 +2136,43 @@ def card_html(r, chart=None, compact=False):
 </article>"""
 
 
-def write_html(path, asof, rows, res, data, ctx, n_scanned, review_html="", title="Breakout Scan", subtitle=None):
+def radar_html(radar):
+    """'On the radar' table: names coiling just under resistance, with the price that would trigger a breakout."""
+    if not radar:
+        return ('<section><h2>On the radar</h2><p class="empty">No tight bases within 3% of breaking out today.</p></section>')
+    e = html_mod.escape
+
+    def row(f):
+        p = PROFILES.get(f["Ticker"]) or {}
+        notes = [x for x, ok in (("rising lows", f.get("HigherLows")), ("range tightening", f.get("Tightening")),
+                                 ("quiet volume", _num(f.get("QuietVol"), 9) < 1.0), ("uptrend", f.get("Uptrend")),
+                                 ("up this week", f.get("Rising5d"))) if ok]
+        since = pd.Timestamp(f["FirstSeen"]).strftime("%b %d")
+        return (f'<tr><td class="tk"><b>{f["Ticker"]}</b></td><td class="cn">{e(p.get("Name") or "-")}'
+                f'<br><small class="hint">{e(p.get("Industry") or p.get("Sector") or "")}</small></td>'
+                f'<td>{_f(f["Close"])}</td><td><b>{_f(f["Trigger"])}</b></td><td>{f["DistPct"]:.1f}%</td>'
+                f'<td>{f["VolNeeded"]:,}</td><td>{f["BaseLen"]} days</td><td>{since}</td>'
+                f'<td class="cn">{", ".join(notes) or "-"}</td></tr>')
+
+    ca = [f for f in radar if f["Region"] == "CA"]
+    us = [f for f in radar if f["Region"] != "CA"]
+    head = ('<tr><th class="tk">Ticker</th><th>Company</th><th>Close</th><th>Breaks out on a close above</th>'
+            '<th>Away</th><th>Volume needed</th><th>Base</th><th>On radar since</th><th>Why it looks ready</th></tr>')
+    tbl = lambda xs, name: (f'<h4>{name} ({len(xs)})</h4><div class="wrap"><table class="sum">{head}'
+                            + "".join(row(f) for f in xs) + "</table></div>") if xs else ""
+    return ('<section><h2>On the radar: close to breaking out</h2><p class="hint">Tight bases closing within 3% under a '
+            'flat top, not broken out yet. <b>Not a buy</b>: it becomes a setup only if it closes above the trigger on '
+            'the volume shown (1.5x its 50-day average), then holds the next day. Set a price alert at the trigger. '
+            'Canada first, ranked by how ready the base looks.</p>'
+            + tbl(ca, "Canada") + tbl(us, "United States") + "</section>")
+
+
+def write_html(path, asof, rows, res, data, ctx, n_scanned, review_html="", title="Breakout Scan", subtitle=None,
+               radar=None):
     asof_txt = pd.Timestamp(asof).strftime("%a %b %d, %Y")
     act = [r for r in rows if not r["Closed"] or r["StatusSince"] == asof]
     order = {"SELL": 0, "TAKE PROFIT": 1, "BUY": 2, "WATCH": 3, "EXTENDED": 4, "HOLD": 5, "TRAIL": 6, "DROP": 7}
-    act.sort(key=lambda r: (order.get(r["Status"], 9), -_num(r.get("Score"), 0)))
+    act.sort(key=lambda r: (order.get(r["Status"], 9), region(r["Ticker"]) != "CA", -_num(r.get("Score"), 0)))  # Canada first
 
     def charts_for(r):
         try:
@@ -2107,7 +2186,7 @@ def write_html(path, asof, rows, res, data, ctx, n_scanned, review_html="", titl
     holding = [r for r in act if r["Status"] in ("HOLD", "TRAIL")]
     cutoff = (pd.Timestamp(asof) - pd.Timedelta(days=21)).date().isoformat()
     closed = [r for r in rows if r["Closed"] and r["StatusSince"] < asof and r["StatusSince"] >= cutoff]
-    closed.sort(key=lambda r: r["StatusSince"], reverse=True)
+    closed.sort(key=lambda r: (r["StatusSince"], region(r["Ticker"]) == "CA"), reverse=True)
 
     counts = {}
     for r in act:
@@ -2266,6 +2345,7 @@ ul.ck b{{display:inline-block;width:20px}} .ok{{color:var(--up)}} .no{{color:var
 {summary}
 {section("Act at tomorrow's open", "New buys, profit-taking and exits.", do_now, empty="No action needed tomorrow.")}
 {section("Watchlist", "Broke out but not confirmed yet, or too far above the breakout level to buy.", watch, empty="Nothing on watch.")}
+{radar_html(radar) if radar is not None else ""}
 {section("Open positions", "Setups that triggered a Buy and are still running.", holding, compact=True, empty="No open positions.")}
 {closed_sec}
 <section><h2>What the labels mean</h2><ul class="gl">{glossary}</ul>
@@ -2829,11 +2909,16 @@ def _tracker_selftest():
                             "Country": "Canada", "Website": "https://example.com",
                             "Summary": "Test Corp designs aircraft parts. It sells to airlines worldwide. " * 6}
         with tempfile.TemporaryDirectory() as td:
-            write_html(os.path.join(td, "t.html"), asof, rows, res, {"TEST": d0}, [], 1)
+            rad = [dict(Ticker="TEST", Indexes="Test", Region="CA", Trigger=100.2, Resistance=100.0, Close=99.1,
+                        DistPct=1.1, BaseLen=20, BaseDepthPct=4.0, Touches=4, HigherLows=True, Tightening=True,
+                        QuietVol=0.8, Uptrend=True, Rising5d=True, VolNeeded=1500000, Readiness=8.0,
+                        FirstSeen=asof, LastSeen=asof)]
+            write_html(os.path.join(td, "t.html"), asof, rows, res, {"TEST": d0}, [], 1, radar=rad)
             page = open(os.path.join(td, "t.html"), encoding="utf-8").read()
         PROFILES.pop("TEST", None)
         assert "Test Corp &amp; Co." in page and "Aerospace &amp; Defense" in page and "More about the company" in page
-        print("report  : renders (with company profile)")
+        assert "On the radar" in page and "1,500,000" in page
+        print("report  : renders (company profile, radar)")
     except Exception as e:
         print("report  : FAILED", e); ok = False
     return ok
@@ -2856,6 +2941,24 @@ def selftest():
         r = analyze(prep(mod(_synthetic("uptrend"))))
         print(f"{label:<8}: " + ("correctly rejected" if r is None else "WRONGLY ACCEPTED"))
         ok &= r is None
+    # radar: the same base one day before the breakout candle should be flagged, with the trigger just above 100
+    pre = prep(_synthetic("uptrend").iloc[:-1])
+    f = check_forming(pre, arrays(pre))
+    good = bool(f) and 100.0 < f["Trigger"] < 101.0
+    print("radar   : " + (f"flagged a day early, trigger {f['Trigger']} ({f['DistPct']}% away)" if good else f"FAILED ({f})"))
+    ok &= good
+    # catch-up: a breakout two sessions old that held both days is still found; one that slipped back is not
+    base_df = _synthetic("uptrend")
+    nx = pd.bdate_range(base_df.index[-1] + pd.Timedelta(days=1), periods=2)
+    held2 = pd.concat([base_df, pd.DataFrame(dict(Open=[103.0, 103.5], High=[104.0, 104.2], Low=[102.5, 102.9],
+                                                  Close=[103.6, 103.9], Volume=[1.4e6, 1.2e6]), index=nx)])
+    r = analyze(prep(held2))
+    good = bool(r) and r.get("LateDays") == 2
+    slip = held2.copy(); slip.iloc[-1, slip.columns.get_loc("Close")] = 99.0; slip.iloc[-1, slip.columns.get_loc("Low")] = 98.8
+    good2 = analyze(prep(slip)) is None
+    print("late    : " + ("caught a 2-session-old breakout; ignored one that slipped back" if good and good2
+                          else f"FAILED (held {r and r.get('LateDays')}, slipped found={not good2})"))
+    ok &= good and good2
     ok &= _tracker_selftest()
     print("SELFTEST", "PASSED" if ok else "FAILED")
     return ok
@@ -2867,7 +2970,7 @@ def main():
                     help="comma list from: " + ",".join(INDEX_NAMES))
     ap.add_argument("--tickers", help="text file of Yahoo tickers (one per line) instead of indexes")
     ap.add_argument("--outdir", default=".")
-    ap.add_argument("--top", type=int, default=40, help="rows kept in the report")
+    ap.add_argument("--top", type=int, default=40, help="new setups kept per market (Canada, US)")
     ap.add_argument("--min-price", type=float, default=CFG["min_price"])
     ap.add_argument("--min-dollar-vol", type=float, default=CFG["min_dollar_vol"])
     ap.add_argument("--open", action="store_true", help="open the HTML report when done")
@@ -2898,7 +3001,7 @@ def main():
     else:
         print("Loading index constituents...")
         membership = build_universe([k.strip() for k in a.indexes.split(",") if k.strip()])
-    tickers = sorted(membership)
+    tickers = sorted(membership, key=lambda t: (region(t) != "CA", t))   # Canada first, then the US
     print(f"Universe: {len(tickers)} unique tickers")
 
     os.makedirs(a.outdir, exist_ok=True)
@@ -2906,7 +3009,8 @@ def main():
     rows = load_tracker(tracker_path)
     tracked = {r["Ticker"] for r in rows if not r["Closed"]}
     ctx_t = ["SPY", "DIA", "QQQ", "IWM", "XIU.TO"]
-    raw = download(sorted(set(tickers) | set(ctx_t) | tracked | set(ALL_SECTOR_ETFS) | set(MACRO_TICKERS) | set(STRESS_TICKERS)))
+    raw = download(sorted(set(tickers) | set(ctx_t) | tracked | set(ALL_SECTOR_ETFS) | set(MACRO_TICKERS) | set(STRESS_TICKERS),
+                          key=lambda t: (region(t) != "CA", t)))   # TSX first, so any late data trouble hits US names
     DIAG.append(f"Universe {len(tickers)} unique tickers; price data received for {len(raw)}")
     data = {}
     frac = session_fraction()
@@ -2923,20 +3027,29 @@ def main():
         except Exception:
             pass
 
-    found = []
+    found, radar = [], []
     for t in tickers:
         if t not in data:
             continue
+        min_dv = CFG["min_dollar_vol_ca"] if region(t) == "CA" else CFG["min_dollar_vol"]
         try:
             A = arrays(data[t])
-            r = analyze(data[t], A)
+            r = analyze(data[t], A, min_dv)
+            f = None if (r or t in tracked) else check_forming(data[t], A, min_dv)
         except Exception:
-            r = None
+            r = f = None
         if r:
             r["Ticker"] = t
             r["Indexes"] = ", ".join(sorted(membership[t]))
             found.append((r, A))
-    print(f"{len(found)} tickers passed the breakout rules; scoring...")
+        elif f:
+            f.update(Ticker=t, Indexes=", ".join(sorted(membership[t])), Region=region(t))
+            radar.append(f)
+    radar = radar_merge(radar, os.path.join(a.outdir, "radar.csv"), save=not LIVE["on"])
+    late = sum(1 for r, _ in found if r.get("LateDays"))
+    print(f"{len(found)} tickers passed the breakout rules ({late} caught late); {len(radar)} on the radar; scoring...")
+    DIAG.append(f"Breakouts found: {len(found)} ({sum(1 for r, _ in found if region(r['Ticker']) == 'CA')} Canadian, "
+                f"{late} caught 2-3 sessions late); on the radar: {len(radar)}")
 
     # market context: benchmark trend, breadth (from the whole universe), sector ETFs
     ctx = build_context(data, tickers)
@@ -2945,7 +3058,8 @@ def main():
         sectors, industries, earnings = fetch_sector_earnings(
             [r["Ticker"] for r, _ in found], os.path.join(a.outdir, "sectors.csv"),
             profile_only=[r["Ticker"] for r in rows                         # names already tracked, incl. ones
-                          if not r["Closed"] or str(r["StatusSince"]) >= recent])  # closed in the last few days
+                          if not r["Closed"] or str(r["StatusSince"]) >= recent]   # closed in the last few days,
+                         + [x["Ticker"] for x in radar])                            # and the radar
     except Exception as e:
         sectors, industries, earnings = {}, {}, {}
         DIAG.append(f"Sector/earnings lookup failed: {str(e)[:120]}")
@@ -2956,12 +3070,19 @@ def main():
     results = []
     for r, A in found:
         try:
-            results.append(enrich(r, data[r["Ticker"]], A, ctx))
+            e = enrich(r, data[r["Ticker"]], A, ctx)
+            if r["Ticker"] in RADAR_PREV:                 # it was flagged before the breakout
+                since, trig = RADAR_PREV[r["Ticker"]]
+                e["Signals"] = (f"on the radar since {since}" + (f" (trigger {trig:.2f})" if np.isfinite(trig) else "")
+                                + (" · " + e["Signals"] if e.get("Signals") else ""))
+            results.append(e)
         except Exception as e:
             DIAG.append(f"{r['Ticker']}: scoring failed ({str(e)[:80]})")
     res = pd.DataFrame(results)
     if len(res):
-        res = res.sort_values(["Score"], ascending=False).head(a.top).reset_index(drop=True)
+        res["_ca"] = res["Ticker"].map(lambda t: region(t) != "CA")
+        res = (res.sort_values(["_ca", "Score"], ascending=[True, False]).groupby("_ca", group_keys=False)
+               .head(a.top).drop(columns="_ca").reset_index(drop=True))   # top N per market, Canada first
     MARKET.clear()
     for reg, name in (("US", "US (S&P 500)"), ("CA", "Canada (TSX 60)")):
         if ctx["bench"].get(reg) is not None:
@@ -2987,7 +3108,7 @@ def main():
         sub = (f"<b>Live preview</b>, prices as of {now:%H:%M} ET ({frac * 100:.0f}% of a normal day's volume traded); "
                "today's volume is projected to a full day. Nothing here is final until the close")
         write_html(os.path.join(a.outdir, "live.html"), asof, live_rows, res, data, market_context(data), len(data),
-                   review, title="Live preview", subtitle=sub)
+                   review, title="Live preview", subtitle=sub, radar=radar)
         print(f"Live preview: {len(res)} setups in progress -> {os.path.join(a.outdir, 'live.html')}")
         return
     rows = update_tracker(rows, res, data, asof)
@@ -3001,7 +3122,7 @@ def main():
     except Exception as e:
         review = ""
         DIAG.append(f"Market review failed: {str(e)[:120]}")
-    write_html(html_path, asof, rows, res, data, market_context(data), len(data), review)
+    write_html(html_path, asof, rows, res, data, market_context(data), len(data), review, radar=radar)
 
     print(f"\n{len(res)} new setups (scanned {len(data)} tickers in {time.time() - t0:.0f}s), close of {asof}\n")
     live = [r for r in rows if not r["Closed"] or r["StatusSince"] == asof]
