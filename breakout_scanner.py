@@ -1413,7 +1413,7 @@ TRACK_COLS = ["Ticker", "Indexes", "Sector", "Category", "Pattern", "Score", "Gr
               "BaseLen", "NextRes", "SupplyZone", "RR", "RS20", "Market", "EarningsDate", "Shares", "RiskPerShare",
               "GapLow", "Signals",
               "Flags", "Status", "StatusSince", "Stop", "Target", "EntryDate", "EntryPrice", "LastClose",
-              "HighClose", "PnLPct", "LastDate", "Note", "Closed"]
+              "HighClose", "PnLPct", "LastDate", "Note", "Closed", "Source"]   # Source "manual" = your own buy
 ACTIVE = {"WATCH", "BUY", "EXTENDED", "HOLD", "TAKE PROFIT", "TRAIL"}
 
 STATUS_INFO = {
@@ -2022,6 +2022,9 @@ def _size_line(r):
     sh, rps = _num(r.get("Shares")), _num(r.get("RiskPerShare"))
     if not np.isfinite(sh) or sh <= 0 or not np.isfinite(rps):
         return ""
+    if r.get("Source") == "manual":
+        return (f" Your position: <b>{sh:g} shares at {_f(r['EntryPrice'])}</b> "
+                f"(${sh * r['EntryPrice']:,.0f}; risking ${sh * rps:,.0f} to the original stop).")
     return (f" Size: <b>{int(sh)} shares</b> (risking {_f(rps)}/share = ${sh * rps:,.0f}, "
             f"{ACCOUNT['risk_pct'] * 100:.1f}% of a ${ACCOUNT['size']:,} account).")
 
@@ -2240,7 +2243,8 @@ def write_html(path, asof, rows, res, data, ctx, n_scanned, review_html="", titl
                "<th>R:R</th><th>Warnings</th><th>P&amp;L</th><th>Earnings</th><th>Breakout date</th><th>Index</th></tr>"
                + "".join(sum_row(r) for r in act) + "</table></div></section>") if act else ""
 
-    traded = [r for r in rows if r["Closed"] and r["Status"] == "SELL" and np.isfinite(_num(r.get("EntryPrice")))]
+    traded = [r for r in rows if r["Closed"] and r["Status"] == "SELL" and np.isfinite(_num(r.get("EntryPrice")))
+              and r.get("Source") != "manual"]            # the edge monitor counts scanner Buys only
     traded.sort(key=lambda r: r["StatusSince"])
     last20 = traded[-20:]
     edge_html = ""
