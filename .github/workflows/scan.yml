@@ -92,8 +92,12 @@ jobs:
           git config user.email "breakout-bot@users.noreply.github.com"
           git add reports
           git commit -m "${{ steps.mode.outputs.mode }} $(date -u +%F)" || echo "Nothing new to commit"
-          git pull --rebase origin main || true
-          git push
+          # if another run saved reports meanwhile, keep this run's newer files (-X theirs = the commit being replayed)
+          for i in 1 2 3; do
+            git pull --rebase -X theirs origin main && git push && break
+            git rebase --abort 2>/dev/null || true
+            sleep 5
+          done
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
