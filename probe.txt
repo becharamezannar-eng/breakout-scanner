@@ -1,0 +1,36 @@
+L.TO last bars:
+  2026-09-18 O 62.70 H 62.70 L 61.79 C 61.80  vol 3.45x
+  2026-09-21 O 61.82 H 62.45 L 61.53 C 62.34  vol 0.44x
+  2026-09-22 O 62.60 H 63.30 L 62.35 C 62.85  vol 0.60x
+  2026-09-23 O 62.82 H 62.85 L 61.90 C 61.90  vol 0.91x
+  2026-09-24 O 62.12 H 62.61 L 61.89 C 62.15  vol 0.94x
+  2026-09-25 O 61.87 H 62.80 L 61.83 C 62.71  vol 0.67x
+  2026-09-28 O 63.00 H 63.24 L 62.08 C 62.99  vol 0.80x
+  2026-09-29 O 63.02 H 63.38 L 62.29 C 62.47  vol 0.57x
+  2026-09-30 O 62.50 H 62.73 L 62.11 C 62.20  vol 0.82x
+  2026-10-01 O 62.15 H 62.47 L 61.39 C 62.19  vol 0.71x
+  2026-10-02 O 62.19 H 62.55 L 61.70 C 62.16  vol 0.94x
+  2026-10-05 O 61.88 H 62.29 L 61.16 C 61.79  vol 0.97x
+  2026-10-06 O 61.58 H 62.13 L 60.94 C 61.41  vol 0.92x
+  2026-10-07 O 61.84 H 62.76 L 61.47 C 62.22  vol 0.88x
+  2026-10-08 O 62.27 H 63.14 L 62.27 C 62.68  vol 1.07x
+  2026-10-09 O 62.36 H 62.83 L 62.13 C 62.64  vol 0.93x
+  2026-10-13 O 63.25 H 64.35 L 62.58 C 63.93  vol 1.24x
+  2026-10-14 O 64.01 H 65.77 L 64.01 C 65.72  vol 1.87x
+  2026-10-15 O 66.61 H 69.05 L 65.55 C 69.00  vol 2.08x
+  2026-10-16 O 68.90 H 70.09 L 68.88 C 70.06  vol 1.85x
+2026-09-25 RADAR: None | BREAKOUT: None
+2026-09-28 RADAR: {'Trigger': np.float64(63.79), 'DistPct': np.float64(1.3), 'BaseLen': 35, 'Readiness': np.float64(4.7), 'Tightening': False, 'HigherLows': True, 'QuietVol': 0.78} | BREAKOUT: None
+2026-09-29 RADAR: None | BREAKOUT: None
+2026-09-30 RADAR: None | BREAKOUT: None
+2026-10-01 RADAR: None | BREAKOUT: None
+2026-10-02 RADAR: None | BREAKOUT: None
+2026-10-05 RADAR: None | BREAKOUT: None
+2026-10-06 RADAR: None | BREAKOUT: None
+2026-10-07 RADAR: None | BREAKOUT: None
+2026-10-08 RADAR: {'Trigger': np.float64(63.79), 'DistPct': np.float64(1.8), 'BaseLen': 43, 'Readiness': np.float64(4.2), 'Tightening': False, 'HigherLows': True, 'QuietVol': 0.95} | BREAKOUT: None
+2026-10-09 RADAR: {'Trigger': np.float64(63.79), 'DistPct': np.float64(1.8), 'BaseLen': 44, 'Readiness': np.float64(4.2), 'Tightening': False, 'HigherLows': True, 'QuietVol': 0.95} | BREAKOUT: None
+2026-10-13 RADAR: None | BREAKOUT: None
+2026-10-14 RADAR: {'Trigger': np.float64(67.1), 'DistPct': np.float64(2.1), 'BaseLen': 60, 'Readiness': np.float64(0.9), 'Tightening': False, 'HigherLows': False, 'QuietVol': 1.19} | BREAKOUT: None
+2026-10-15 RADAR: None | BREAKOUT: ('2026-10-15', 'Fresh - confirm hold next session', np.float64(66.97), np.float64(2.08))
+2026-10-16 RADAR: None | BREAKOUT: ('2026-10-15', 'Confirmed (held next day)', np.float64(66.97), np.float64(2.08))
