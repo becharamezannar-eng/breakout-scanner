@@ -66,6 +66,10 @@ warnings.filterwarnings("ignore")
 CFG = dict(
     min_price=5.0,            # skip penny stocks
     min_dollar_vol=5e6,       # avg 50-day $ volume (day-trading liquidity)
+    min_dollar_vol_ca=3e6,    # TSX floor in CAD: Canadian names trade less, and Canada is the priority market
+    catchup_days=3,           # also catch breakouts up to 3 sessions old that were missed (if they held every day)
+    radar_dist=0.03,          # "On the radar": close within 3% under a flat resistance, not broken out yet
+    radar_max=25,             # radar names kept per market (Canada and US separately)
     min_vol_ratio=1.5,        # breakout volume vs 50-day average (hard floor)
     strong_vol_ratio=2.0,     # "ideal" volume spike
     max_wick_frac=0.30,       # upper wick / candle range (rejection filter)
@@ -538,15 +542,16 @@ def trade_plan(R, low, atr, entry, next_res):
     return round(stop, 2), round(target + 0.005, 2) if not capped else round(target, 2), round(rr, 2), capped
 
 
-def check_breakout(d, b, off, A=None):
-    """Hard rules from the original brief. Returns None if any one fails."""
+def check_breakout(d, b, off, A=None, min_dv=None):
+    """Hard rules from the original brief. Returns None if any one fails.
+    b = breakout bar, off = sessions since (0 fresh, 1 the normal hold day, 2-3 caught late)."""
     A = A or arrays(d)
     O, H, L, C, V = A["Open"], A["High"], A["Low"], A["Close"], A["Volume"]
     atr, avgv, sma50, sma200 = A["ATR14"][b - 1], A["AvgVol50"][b], A["SMA50"][b], A["SMA200"][b]
     if not np.isfinite([atr, avgv, sma50, sma200]).all() or avgv <= 0 or atr <= 0:
         return None
     c = C[b]
-    if c < CFG["min_price"] or avgv * c < CFG["min_dollar_vol"]:
+    if c < CFG["min_price"] or avgv * c < (min_dv or CFG["min_dollar_vol"]):
         return None
 
     # --- breakout candle: volume spike, wide range, strong close, small upper wick
@@ -591,13 +596,14 @@ def check_breakout(d, b, off, A=None):
 
     # --- no immediate rejection
     follow_vol = np.nan
-    if off == 1:
+    if off >= 1:
+        for n in range(b + 1, b + off + 1):          # must hold the level on every session since
+            if C[n] < R or L[n] < R * (1 - CFG["hold_tol"]):
+                return None
         n = b + 1
-        if C[n] < R or L[n] < R * (1 - CFG["hold_tol"]):
-            return None
         if C[n] < C[b] and V[n] > V[b]:
             return None                              # [Murphy ch5] bull trap: selling on heavier volume
-        status = "Confirmed (held next day)"
+        status = "Confirmed (held next day)" if off == 1 else f"Caught late: broke out {off} sessions ago and held"
         follow_vol = V[n] / avgv
     else:
         status = "Fresh - confirm hold next session"
@@ -743,7 +749,7 @@ def check_breakout(d, b, off, A=None):
     round_overhead = bool(rnd <= entry * 1.03)
 
     return dict(
-        Category=category, Pattern=pattern, Status=status, Held=off == 1,
+        Category=category, Pattern=pattern, Status=status, Held=off >= 1, LateDays=off if off >= 2 else 0,
         BreakoutDate=pd.Timestamp(d.index[b]).date().isoformat(),
         BaseStart=pd.Timestamp(d.index[s]).date().isoformat(),
         Close=round(entry, 2), Resistance=round(R, 2),
@@ -775,12 +781,67 @@ def check_breakout(d, b, off, A=None):
     )
 
 
-def analyze(d, A=None):
+def analyze(d, A=None, min_dv=None):
+    """Yesterday's breakout that held today, else today's fresh one, else a missed one from 2-3 sessions ago
+    that has held every day since (so a skipped scan or a busy evening doesn't lose a breakout)."""
     if len(d) < 215:
         return None
     A = A or arrays(d)
     n = len(d) - 1
-    return check_breakout(d, n - 1, 1, A) or check_breakout(d, n, 0, A)
+    r = check_breakout(d, n - 1, 1, A, min_dv) or check_breakout(d, n, 0, A, min_dv)
+    for off in range(2, CFG["catchup_days"] + 1):
+        if r:
+            break
+        r = check_breakout(d, n - off, off, A, min_dv)
+    return r
+
+
+def check_forming(d, A, min_dv=None):
+    """'On the radar': a tight base whose close sits just under a flat top that hasn't broken yet.
+    Gives the trigger price days ahead, so a breakout like Loblaw's (16 Oct 2026: it climbed inside its
+    base for days, then broke out) is on the list before the breakout candle, not only after it."""
+    if len(d) < 215:
+        return None
+    O, H, L, C, V = A["Open"], A["High"], A["Low"], A["Close"], A["Volume"]
+    n = len(d) - 1
+    atr, avgv, sma50, sma200 = A["ATR14"][n], A["AvgVol50"][n], A["SMA50"][n], A["SMA200"][n]
+    if not np.isfinite([atr, avgv, sma50, sma200]).all() or avgv <= 0 or atr <= 0:
+        return None
+    c = C[n]
+    if c < CFG["min_price"] or avgv * c < (min_dv or CFG["min_dollar_vol"]) or c < sma50:
+        return None
+    if atr / c > CFG["max_atr_pct"]:
+        return None
+    for Lb in range(CFG["max_base"], 4, -1):       # longest qualifying base ending yesterday (same as a breakout)
+        s = n - Lb
+        if s < 1:
+            continue
+        hi, lo = H[s:n], L[s:n + 1]
+        R, low = hi.max(), lo.min()
+        depth = (R - low) / R
+        if depth > base_limit(Lb):
+            continue
+        touches = int((hi >= R * (1 - CFG["touch_tol"])).sum())
+        if touches < CFG["min_touches"] or c < low + 0.66 * (R - low):
+            continue
+        trigger = max(R * (1 + CFG["breakout_buffer"]), R + CFG["min_clear_atr"] * atr)
+        dist = trigger / c - 1
+        if dist <= 0 or dist > CFG["radar_dist"]:
+            return None                              # already through (the breakout scan handles it) or too far
+        third = max(1, Lb // 3)
+        higher_lows = _slope(lo) > 0 and lo[-third:].min() > lo[:third].min()
+        last5 = (H[n - 4:n + 1] - L[n - 4:n + 1]).mean()
+        tightening = bool(last5 < 0.8 * (hi - L[s:n]).mean())
+        quiet = float(V[n - 4:n + 1].mean() / avgv)
+        uptrend = bool(sma50 > sma200 and sma50 > A["SMA50"][n - 10])
+        up5 = bool(c > C[n - 5])
+        ready = (3 * (1 - dist / CFG["radar_dist"]) + 2 * higher_lows + 2 * tightening
+                 + (1 if quiet < 1.0 else 0) + 2 * uptrend)
+        return dict(Trigger=round(trigger, 2), Resistance=round(R, 2), Close=round(c, 2), DistPct=round(dist * 100, 1),
+                    BaseLen=Lb, BaseDepthPct=round(depth * 100, 1), Touches=touches, HigherLows=bool(higher_lows),
+                    Tightening=tightening, QuietVol=round(quiet, 2), Uptrend=uptrend, Rising5d=up5,
+                    VolNeeded=int(np.ceil(CFG["min_vol_ratio"] * avgv)), Readiness=round(ready, 1))
+    return None
 
 # --------------------------------------------------------------------------
 # Market, sector, relative strength, earnings - and the 100-point scorecard

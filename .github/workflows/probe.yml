@@ -1,0 +1,34 @@
+name: probe
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  p:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt
+      - name: probe
+        run: |
+          python - > probe.txt 2>&1 <<'PY'
+          import yfinance as yf, pandas as pd, numpy as np
+          import breakout_scanner as b
+          for t in ["L.TO"]:
+              raw = yf.download(t, period="2y", auto_adjust=False, progress=False)
+              raw.columns = [c[0] if isinstance(c, tuple) else c for c in raw.columns]
+              d = b.prep(raw[["Open","High","Low","Close","Volume"]].dropna())
+              A0 = b.arrays(d)
+              print(t, "last bars:")
+              for i in range(len(d)-20, len(d)):
+                  print(" ", d.index[i].date(), "O %.2f H %.2f L %.2f C %.2f  vol %.2fx" % (d.Open.iloc[i], d.High.iloc[i], d.Low.iloc[i], d.Close.iloc[i], d.Volume.iloc[i]/d.AvgVol50.iloc[i]))
+              for i in range(len(d)-15, len(d)):
+                  dd = d.iloc[:i+1]; A = b.arrays(dd)
+                  f = b.check_forming(dd, A, 3e6); r = b.analyze(dd, A, 3e6)
+                  print(dd.index[-1].date(), "RADAR:", {k: f[k] for k in ("Trigger","DistPct","BaseLen","Readiness","Tightening","HigherLows","QuietVol")} if f else None,
+                        "| BREAKOUT:", (r["BreakoutDate"], r["Status"], r["Resistance"], r["VolX"]) if r else None)
+          PY
+      - run: |
+          git config user.name bot; git config user.email bot@users.noreply.github.com
+          git add probe.txt; git commit -m probe-output; git push
