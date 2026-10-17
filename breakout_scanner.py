@@ -2434,9 +2434,9 @@ ul.ck b{{display:inline-block;width:20px}} .ok{{color:var(--up)}} .no{{color:var
 <!--MORNING--><!--/MORNING-->
 <!--REVIEW-->
 <p class="links"><a href="index.html">Latest scan</a> &middot; <a href="live.html">Live preview</a> &middot; <a href="morning.html">Morning check</a> &middot; <a href="backtest.html">Backtest</a> &middot; <a href="archive.html">Past scans</a></p>
+{portfolio}
 <h2>Setups</h2>
 <div class="chips">{chips}</div>
-{portfolio}
 {summary}
 {section("Act at tomorrow's open", "New buys, profit-taking and exits.", do_now, empty="No action needed tomorrow.")}
 {section("Watchlist", "Broke out but not confirmed yet, or too far above the breakout level to buy.", watch, empty="Nothing on watch.")}
