@@ -135,7 +135,8 @@ def long_term(d, bench, info, F, is_fund):
     p = (15 if rs > 0.10 else 10 if rs > 0 else 5 if rs > -0.10 else 0) if np.isfinite(rs) else 7
     parts["Strength vs market"] = (p, 15, "Murphy ch17")
     if np.isfinite(rs):
-        notes.append(("Strength", f"Over 1 year it {'beat' if rs > 0 else 'lagged'} its market index by {abs(rs) * 100:.1f} points."))
+        idx = "the S&P/TSX 60 (XIU)" if bench is not None and getattr(bench, "attrs", {}).get("t") == "XIU.TO" else "the S&P 500 (SPY)"
+        notes.append(("Strength", f"Over 1 year it {'beat' if rs > 0 else 'lagged'} {idx} by {abs(rs) * 100:.1f} points."))
 
     # risk [Hougaard; Douglas ch11; Gann rule 4]
     c5 = c.iloc[-1260:]
@@ -372,12 +373,14 @@ def build_page(key, t, d, F, ctx, bench):
     about = " ".join(str(p.get("longBusinessSummary") or "").split())
     snap = facts_grid([
         ("Price", f"{bs._f(last)} {cur}"), ("Today", pct(last / prev - 1, 100, 2, True)),
-        ("Market cap", big(p.get("marketCap") or p.get("totalAssets"))),
+        (("Fund assets", big(p.get("totalAssets"))) if is_fund else ("Market cap", big(p.get("marketCap")))),
         ("52-week range", f"{bs._f(d['Low'].iloc[-252:].min())} - {bs._f(d['High'].iloc[-252:].max())}"),
         ("1-year return", pct(last / d["Close"].iloc[-252] - 1, 100, 1, True) if len(d) > 252 else "-"),
-        ("Dividend yield", pct(_n(p.get("dividendYield")) / (100 if _n(p.get("dividendYield")) > 1 else 1)) if np.isfinite(_n(p.get("dividendYield"))) else "-"),
+        ("Dividend yield", "None" if not _n(p.get("dividendYield")) else
+         pct(_n(p.get("dividendYield")) / (100 if _n(p.get("dividendYield")) > 1 else 1)) if np.isfinite(_n(p.get("dividendYield"))) else "-"),
     ])
-    fin = "" if is_fund else facts_grid([
+    fcur = p.get("financialCurrency") or cur
+    fin = "" if is_fund else (f'<p class="hint">Financial figures in {e(fcur)}' + (f' (the shares trade in {e(cur)})' if fcur != cur else '') + '.</p>') + facts_grid([
         ("Revenue (TTM)", big(p.get("totalRevenue"))), ("Revenue growth", pct(p.get("revenueGrowth"), 100, 1, True)),
         ("Profit margin", pct(p.get("profitMargins"))), ("Operating margin", pct(p.get("operatingMargins"))),
         ("Return on equity", pct(p.get("returnOnEquity"))), ("Free cash flow", big(p.get("freeCashflow"))),
@@ -528,7 +531,10 @@ def main():
         ds = sorted(pd.Timestamp(x).date() for x in (cal.get("Earnings Date") or []) if pd.Timestamp(x).date() >= dt.date.today())
         earn = ds[0] if ds else None
     ctx.update(sector={t: info.get("sector")}, industry={t: info.get("industry")}, earnings={t: earn} if earn else {})
-    page = build_page(key, t, data[t], F, ctx, data.get(bench_t))
+    bench = data.get(bench_t)
+    if bench is not None:
+        bench.attrs["t"] = bench_t
+    page = build_page(key, t, data[t], F, ctx, bench)
     for k in {key, clean(t)}:
         with open(os.path.join(a.outdir, "lookup", f"{k}.html"), "w", encoding="utf-8") as fh:
             fh.write(page)
