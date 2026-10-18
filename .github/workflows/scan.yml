@@ -16,8 +16,12 @@ on:
       mode:
         description: "What to run"
         type: choice
-        options: [scan, morning, backtest]
+        options: [scan, morning, backtest, lookup]
         default: scan
+      ticker:
+        description: "Ticker for a lookup (e.g. SHOP.TO, NVDA)"
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -69,6 +73,12 @@ jobs:
           FORCE_MORNING: ${{ github.event_name == 'workflow_dispatch' && '1' || '0' }}
         run: python breakout_scanner.py --outdir reports --morning
 
+      - name: Ticker lookup
+        if: steps.mode.outputs.mode == 'lookup'
+        env:
+          TICKER: ${{ inputs.ticker }}
+        run: python lookup.py --outdir reports
+
       - name: Backtest (5 years, S&P 500 + TSX 60 + Dow)
         if: steps.mode.outputs.mode == 'backtest'
         run: python breakout_scanner.py --outdir reports --backtest
@@ -79,6 +89,7 @@ jobs:
           latest=$(ls reports/breakouts_*.html | sort | tail -1)
           cp "$latest" site/index.html
           cp reports/*.html reports/*.csv site/
+          if [ -d reports/lookup ]; then cp -r reports/lookup site/; fi
           {
             echo '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
             echo '<title>Scan archive</title><body style="font-family:sans-serif;margin:16px"><h1>Past scans</h1><ul>'
@@ -91,7 +102,7 @@ jobs:
           git config user.name "breakout-bot"
           git config user.email "breakout-bot@users.noreply.github.com"
           git add reports
-          git commit -m "${{ steps.mode.outputs.mode }} $(date -u +%F)" || echo "Nothing new to commit"
+          git commit -m "${{ steps.mode.outputs.mode }} ${{ inputs.ticker }} $(date -u +%F)" || echo "Nothing new to commit"
           # if another run saved reports meanwhile, keep this run's newer files (-X theirs = the commit being replayed)
           for i in 1 2 3; do
             git pull --rebase -X theirs origin main && git push && break

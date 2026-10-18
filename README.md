@@ -10,6 +10,9 @@ looking for volume-confirmed breakouts out of tight consolidations
 - **Run it now:** the **Scan now** button at the top of the report (one-time token setup under the gear icon),
   or Actions tab → *Daily breakout scan* → *Run workflow*. During market hours a manual scan writes `live.html`
   (today's volume projected to a full day) and leaves the tracker untouched.
+- **Ticker lookup:** type any ticker in the search box at the top of any page. GitHub builds `lookup/<TICKER>.html`
+  in about 2-3 minutes: what the company does, earnings and financial health, valuation, analysts, headlines,
+  the scanner's breakout rules and scorecard, and a long-term scorecard from the books (`lookup.py`).
 - **Market review:** top of every report - indexes, VIX, 10-yr yield, USD/CAD, oil, gold, breadth, sectors and a market stance.
 - **Canada first:** TSX names are downloaded, analysed and listed first in every section (with a CAD 3M/day
   liquidity floor instead of USD 5M), and the report keeps the top 40 new setups per market so US names still appear.

@@ -1865,6 +1865,8 @@ td.uptrend{color:var(--up)} td.downtrend{color:var(--dn)} td.mixed{color:#a15c00
 # "Scan now" buttons: start a GitHub run from the page
 # --------------------------------------------------------------------------
 RUN_CSS = """
+.lookbar{display:flex;gap:6px;margin:8px 0 4px} .lookbar input{flex:1;min-width:0;padding:9px 10px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:15px}
+.lookbar button{padding:9px 14px;border-radius:9px;border:0;background:var(--ink);color:var(--bg);font-weight:600}
 .runbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
 .runbar button{font:600 14px/1 -apple-system,"Segoe UI",Roboto,sans-serif;border:0;border-radius:10px;padding:11px 14px;cursor:pointer;
   background:#1d5fbf;color:#fff} .runbar button.alt{background:var(--card);color:var(--ink);border:1px solid var(--line)}
@@ -1884,6 +1886,10 @@ RUN_HTML = """
   <button class="alt" onclick="toggleSetup()">&#9881;</button>
   <div id="runstatus"></div>
 </div>
+<form class="lookbar" onsubmit="event.preventDefault(); lookUp();">
+  <input id="lk" placeholder="Look up a ticker: SHOP.TO, NVDA, L.TO..." autocomplete="off" autocapitalize="characters" maxlength="15">
+  <button type="submit">Analyze</button>
+</form>
 <div id="runsetup">
   <b>One-time setup for the Scan now button</b>
   <ol>
@@ -1903,6 +1909,7 @@ RUN_HTML = """
   const owner = location.hostname.split('.')[0];
   const repo = location.pathname.split('/').filter(Boolean)[0] || 'breakout-scanner';
   const api = `https://api.github.com/repos/${owner}/${repo}/actions`;
+  const base = `/${repo}/`;
   const KEY = 'scanTok';
   const st = document.getElementById('runstatus');
   const get = () => { try { return localStorage.getItem(KEY) || ''; } catch(e) { return ''; } };
@@ -1910,16 +1917,22 @@ RUN_HTML = """
   window.saveTok = () => { try { localStorage.setItem(KEY, document.getElementById('tok').value.trim()); } catch(e) {} toggleSetup(); st.textContent = 'Saved. Tap Scan now.'; };
   window.clearTok = () => { try { localStorage.removeItem(KEY); } catch(e) {} st.textContent = 'Token removed from this device.'; };
   const H = t => ({ 'Authorization': 'Bearer ' + t, 'Accept': 'application/vnd.github+json' });
-  window.runNow = async (mode) => {
+  window.lookUp = () => {
+    const k = (document.getElementById('lk').value || '').trim().toUpperCase().replace(/ +/g, '');
+    if (!/^[A-Z0-9][A-Z0-9.=^-]{0,14}$/.test(k)) { st.textContent = 'Type a ticker, e.g. SHOP.TO or NVDA.'; return; }
+    runNow('lookup', k);
+  };
+  window.runNow = async (mode, ticker) => {
     const t = get();
     if (!t) { window.open(`https://github.com/${owner}/${repo}/actions/workflows/scan.yml`, '_blank');
-      st.innerHTML = 'On GitHub: tap <b>Run workflow</b>, pick <b>' + mode + '</b>, then <b>Run workflow</b>. Or set up one-tap runs with &#9881;.'; return; }
-    document.querySelectorAll('.runbar button').forEach(b => b.disabled = true);
+      st.innerHTML = 'On GitHub: tap <b>Run workflow</b>, pick <b>' + mode + '</b>' + (ticker ? ', type <b>' + ticker + '</b>' : '') + ', then <b>Run workflow</b>. Or set up one-tap runs with &#9881;.'; return; }
+    document.querySelectorAll('.runbar button, .lookbar button').forEach(b => b.disabled = true);
     const started = new Date();
-    st.textContent = 'Starting ' + mode + '...';
+    st.textContent = 'Starting ' + (ticker ? 'lookup of ' + ticker : mode) + '...';
+    const inputs = ticker ? { mode, ticker } : { mode };
     try {
       const r = await fetch(`${api}/workflows/scan.yml/dispatches`, { method: 'POST', headers: H(t),
-        body: JSON.stringify({ ref: 'main', inputs: { mode } }) });
+        body: JSON.stringify({ ref: 'main', inputs }) });
       if (r.status !== 204) { throw new Error(r.status === 401 || r.status === 403 ? 'token rejected - check it in setup' : 'GitHub said ' + r.status); }
       let run = null;
       for (let i = 0; i < 160; i++) {
@@ -1929,19 +1942,20 @@ RUN_HTML = """
         run = (j.workflow_runs || []).find(x => new Date(x.created_at) >= new Date(started - 60000));
         const mins = Math.round((new Date() - started) / 60000);
         if (!run) { st.textContent = 'Waiting for GitHub to start the run...'; continue; }
-        if (run.status !== 'completed') { st.textContent = (run.status === 'queued' ? 'Queued' : 'Running') + ' (' + mins + ' min). A full scan takes about 6-8 minutes; you can leave this page open.'; continue; }
+        if (run.status !== 'completed') { st.textContent = (run.status === 'queued' ? 'Queued (another run is finishing first)' : 'Running') + ' (' + mins + ' min). '
+          + (ticker ? 'A lookup takes about 2-3 minutes.' : 'A full scan takes about 6-8 minutes.') + ' You can leave this page open.'; continue; }
         if (run.conclusion === 'success') {
           st.textContent = 'Done. Reloading...';
           const ny = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
           const mins = ny.getHours() * 60 + ny.getMinutes();
           const open = ny.getDay() > 0 && ny.getDay() < 6 && mins >= 570 && mins < 960;
-          const page = mode === 'morning' ? 'morning.html' : (open ? 'live.html' : 'index.html');
-          setTimeout(() => { location.href = page + '?t=' + Date.now(); }, 20000);
+          const page = ticker ? 'lookup/' + ticker + '.html' : mode === 'morning' ? 'morning.html' : (open ? 'live.html' : 'index.html');
+          setTimeout(() => { location.href = base + page + '?t=' + Date.now(); }, 25000);
         } else { st.innerHTML = 'The run ended with "' + run.conclusion + '". <a href="' + run.html_url + '" target="_blank">See details</a>.'; }
         break;
       }
     } catch (e) { st.textContent = 'Could not start: ' + e.message; }
-    document.querySelectorAll('.runbar button').forEach(b => b.disabled = false);
+    document.querySelectorAll('.runbar button, .lookbar button').forEach(b => b.disabled = false);
   };
 })();
 </script>
