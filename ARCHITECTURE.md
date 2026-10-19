@@ -30,14 +30,12 @@ that reads the core's functions and writes its own files. A failure in an add-on
 | Morning fix | `--live` run before `--morning`; `write_live_brief()` | `live_brief.json`, morning block | done |
 | ESG scanner | `esg_scanner.py` | `esg/index.html`, `esg/lookup/`, `reports/esg/*.csv` | done |
 | Phone app shell | `app/` (manifest, service worker, tabs) | `app/index.html` | done |
-| Accounts | Supabase Auth | sign-up / login in `app/` | needs the account service |
-| User portfolios | `users_monitor.py` + DB table | per-user results in the DB | needs the account service |
+| Accounts / user portfolios | (not built) | - | dropped 2026-10-19: owner-only app, no sign-in |
 
 ## Owner access
-No username or password. The owner's phone is recognised by the Scan-now key already stored on it (from the report
-pages' setup), so the app opens in owner mode. The existing link keeps working exactly as before.
+No username or password. The app's Portfolio tab opens the owner's portfolio from the latest evening report. The existing link keeps working exactly as before.
 
-## Accounts and user portfolios (phase 2)
+## Accounts and user portfolios (not built - kept as a design note)
 * **Sign-up / login:** Supabase Auth (email + password, stored hashed by Supabase; password reset by email). Either
   open sign-up, or invite-only: the owner adds users in the Supabase dashboard and each user sets and later changes
   their own password.

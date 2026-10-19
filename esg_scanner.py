@@ -47,7 +47,12 @@ FUNDS = {
     "US": dict(fund="USXF", index="MSCI USA Choice ESG Screened Index", name="iShares ESG Advanced MSCI USA ETF",
                page="https://www.ishares.com/us/products/314365/ishares-esg-advanced-msci-usa-etf",
                urls=["https://www.ishares.com/us/products/314365/ishares-esg-advanced-msci-usa-etf/1467271812596.ajax"
-                     "?fileType=csv&fileName=USXF_holdings&dataType=fund"]),
+                     "?fileType=csv&fileName=USXF_holdings&dataType=fund",
+                     "https://www.ishares.com/us/products/314365/fund/1467271812596.ajax"
+                     "?fileType=csv&fileName=USXF_holdings&dataType=fund",
+                     "https://www.blackrock.com/us/individual/products/314365/ishares-esg-advanced-msci-usa-etf/"
+                     "1464253357814.ajax?fileType=csv&fileName=USXF_holdings&dataType=fund",
+                     "https://www.ishares.com/us/products/314365/ishares-esg-advanced-msci-usa-etf/latest-holdings.csv"]),
     "CA": dict(fund="XCSR", index="MSCI Canada IMI Choice ESG Screened 10% Issuer Capped Index",
                name="iShares ESG Advanced MSCI Canada Index ETF",
                page="https://www.blackrock.com/ca/investors/en/products/313580/ishares-esg-advanced-msci-canada-index-etf",
@@ -140,15 +145,16 @@ def fetch_members(esg_dir, diag, universe=()):
     old = pd.read_csv(path) if os.path.exists(path) else pd.DataFrame(columns=MEMBER_COLS)
     frames = []
     for reg, f in FUNDS.items():
-        got = None
+        got, tried = None, []
         for url in f["urls"]:
             try:
                 r = requests.get(url, headers=bs._WEB, timeout=30)
                 if r.ok and "Ticker" in r.text[:5000]:
                     got = parse_holdings(r.text)
                     break
+                tried.append(f"{r.status_code}{'' if r.ok else ''}{' (not a holdings file)' if r.ok else ''}")
             except Exception as ex:
-                diag.append(f"ESG list {f['fund']}: {type(ex).__name__}")
+                tried.append(type(ex).__name__)
         if got is not None and len(got[0]) >= 30:
             df, asof = got
             df["Ticker"] = [map_ticker(t, reg, known) for t in df["Ticker"]]
@@ -159,9 +165,10 @@ def fetch_members(esg_dir, diag, universe=()):
             prev = old[old["Region"] == reg] if len(old) else old
             if len(prev):
                 frames.append(prev[MEMBER_COLS])
-                diag.append(f"ESG list {f['fund']}: download failed, using the saved list from {prev['AsOf'].iloc[0]}")
+                diag.append(f"ESG list {f['fund']}: download failed ({', '.join(tried)}), using the saved list from "
+                            f"{prev['AsOf'].iloc[0]}")
             else:
-                diag.append(f"ESG list {f['fund']}: download failed and no saved list")
+                diag.append(f"ESG list {f['fund']}: download failed ({', '.join(tried)}) and no saved list")
     mem = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=MEMBER_COLS)
     mem = mem.drop_duplicates("Ticker")
     if len(mem):

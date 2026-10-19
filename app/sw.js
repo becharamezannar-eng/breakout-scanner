@@ -1,5 +1,5 @@
 // App shell cache: the app opens instantly and offline; reports themselves always load fresh from the network.
-const CACHE = 'scanner-shell-v1';
+const CACHE = 'scanner-shell-v2';
 const SHELL = ['./', 'index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(

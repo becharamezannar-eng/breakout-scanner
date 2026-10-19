@@ -58,30 +58,24 @@ input{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:9
   </div>
 </section>
 <section class="view" id="v-report"><iframe id="frame" title="Report"></iframe></section>
-<section class="view" id="v-port"><div class="pad" id="port"></div></section>
+<section class="view" id="v-port"><iframe id="portframe" title="My portfolio"></iframe></section>
 <section class="view" id="v-esg"><iframe id="esgframe" title="ESG scanner"></iframe></section>
-<section class="view" id="v-acct"><div class="pad" id="acct"></div></section>
 
 <nav>
   <button data-tab="scan" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>Scanner</button>
   <button data-tab="port"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>Portfolio</button>
   <button data-tab="esg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 19c0-8 6-14 15-15-1 9-7 15-15 15z"/><path d="M5 19l7-7"/></svg>ESG</button>
-  <button data-tab="acct"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Account</button>
 </nav>
 
 <script>
 (function () {
-  // Owner = this device already holds the Scan-now key from the report pages. No username or password.
-  let owner = false;
-  try { owner = !!localStorage.getItem('scanTok'); } catch (e) {}
-  document.getElementById('who').textContent = owner ? 'Owner device' : '';
-
-  const views = { scan: 'v-scan', report: 'v-report', port: 'v-port', esg: 'v-esg', acct: 'v-acct' };
+  const views = { scan: 'v-scan', report: 'v-report', port: 'v-port', esg: 'v-esg' };
   const show = (k) => {
     Object.values(views).forEach(id => document.getElementById(id).classList.remove('on'));
     document.getElementById(views[k]).classList.add('on');
     document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === k || (k === 'report' && b.dataset.tab === 'scan')));
     if (k === 'esg') { const f = document.getElementById('esgframe'); if (!f.src) f.src = '../esg/index.html'; }
+    if (k === 'port') loadPortfolio();
   };
   const openReport = (url) => { document.getElementById('frame').src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(); show('report'); };
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.tab));
@@ -103,17 +97,20 @@ input{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:9
       + (b.gainers && b.gainers.length ? `<p class="muted">Top gainers: ${b.gainers.slice(0, 3).map(m => m.t + ' ' + fmt(m.chg)).join(', ')}</p>` : '');
   }).catch(() => {});
 
-  // Portfolio and Account tabs: external accounts are switched on once the account service is connected
-  const ACCOUNTS_READY = false;
-  document.getElementById('port').innerHTML = owner
-    ? `<div class="card"><h2>Your portfolio</h2><p class="muted">Your positions and their trend reads are in the evening report.</p>
-       <div class="links"><a href="#" id="myport">Open my portfolio</a></div></div>`
-    : `<div class="card"><h2>My portfolio</h2><p class="muted">${ACCOUNTS_READY ? 'Sign in to add your holdings.' :
-       'Personal portfolios open soon: sign in, add each holding (ticker, purchase price, purchase date) and the scanner will watch it every evening with the same rules.'}</p></div>`;
-  const mp = document.getElementById('myport'); if (mp) mp.onclick = (ev) => { ev.preventDefault(); openReport('../index.html#portfolio'); };
-  document.getElementById('acct').innerHTML = owner
-    ? `<div class="card"><h2>Owner device</h2><p class="muted">This phone holds your Scan-now key, so it opens in owner mode with no login.</p></div>`
-    : `<div class="card"><h2>Account</h2><p class="muted">${ACCOUNTS_READY ? '' : 'Accounts are not open yet.'}</p></div>`;
+  // Portfolio tab: the 'Your portfolio' section of the latest evening report, opened at that section
+  let portLoaded = 0;
+  window.loadPortfolio = () => {
+    const f = document.getElementById('portframe');
+    if (Date.now() - portLoaded < 5 * 60000) return;          // reload at most every 5 minutes
+    portLoaded = Date.now();
+    f.onload = () => { try {
+      const d = f.contentDocument;
+      const h = [...d.querySelectorAll('h2')].find(x => /your portfolio/i.test(x.textContent));
+      if (h) h.scrollIntoView();
+      else d.body.insertAdjacentHTML('afterbegin', '<p style="padding:12px;font:15px system-ui">No portfolio section in the latest report.</p>');
+    } catch (e) {} };
+    f.src = '../index.html?t=' + Date.now();
+  };
 
   // Install prompt (Android / Chrome); iPhone: Share > Add to Home Screen
   let deferred;
