@@ -2627,11 +2627,17 @@ def morning_check(outdir, force=False):
                      f'<small class="hint">{label} from last night</small></h3><span class="badge">{verdict}</span></header>'
                      f'{company_html(r["Ticker"], full=False)}<p>{text}</p><div class="facts">{facts}</div></article>')
     stamp = items[0][2]["time"] if items and items[0][2] else now.strftime("%H:%M ET")
+    last = _last_full_scan(outdir)
+    last_txt = f"{last:%a %b %d}" if last else "not available"
+    brief = live_brief_html(outdir, now)
     html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Morning check {now:%Y-%m-%d}</title>
 <style>{PAGE_CSS}{RUN_CSS}</style></head><body><main>
 <h1>Morning check</h1>{RUN_HTML}
-<p class="hint">{now:%a %b %d, %Y} &middot; prices as of {stamp} &middot; <a href="index.html">Last night's scan</a></p>
+<p class="hint">{now:%a %b %d, %Y} &middot; prices as of {stamp} &middot; last full scan: close of {last_txt}
+&middot; <a href="index.html">Evening report</a> &middot; <a href="live.html">Live report</a></p>
+{('<section class="card" style="--c:#1d5fbf"><header><h3>Today\'s market</h3></header>' + brief + '</section>') if brief else
+ '<p class="hint">Today\'s full live scan has not run yet (it needs the market to be open).</p>'}
 <p class="hint">Checks last night's Buy, Don't-chase, Watch and open positions against today's session: price vs the
 day's VWAP and its direction, volume compared with the same time on the last 10 days, and the buy zone.
 US quotes are near real-time; TSX quotes can be delayed about 15 minutes. Re-check your broker before acting.</p>
@@ -2641,10 +2647,107 @@ US quotes are near real-time; TSX quotes can be delayed about 15 minutes. Re-che
 </main></body></html>"""
     with open(os.path.join(outdir, "morning.html"), "w", encoding="utf-8") as f:
         f.write(html)
-    if not demo:
-        inject_morning_summary(outdir, items, stamp, now)
+    if not demo or brief:
+        inject_morning_summary(outdir, items if not demo else [], stamp, now)
     print(f"Morning check written for {len(items)} names")
     return 0
+
+
+BRIEF_INDEXES = [("^GSPC", "S&P 500"), ("^IXIC", "Nasdaq"), ("^DJI", "Dow"), ("^RUT", "Russell 2000"),
+                 ("^GSPTSE", "S&P/TSX")]
+
+
+def write_live_brief(outdir, data, tickers, ctx, n_found, n_radar, frac):
+    """Morning fix: a small JSON snapshot of today's market from the full live scan, read by the morning check."""
+    import json
+    now = dt.datetime.now(ET)
+    today = now.date()
+
+    def day_chg(t):
+        d = data.get(t)
+        if d is None or len(d) < 2 or pd.Timestamp(d.index[-1]).date() != today:
+            return None
+        c0, c1 = float(d["Close"].iloc[-2]), float(d["Close"].iloc[-1])
+        return dict(t=t, last=round(c1, 2), chg=round((c1 / c0 - 1) * 100, 2)) if c0 > 0 else None
+
+    idx = [dict(name=n, **x) for t, n in BRIEF_INDEXES for x in [day_chg(t)] if x]
+    sec = [dict(name=SECTOR_NAMES.get(t, t) + (" (TSX)" if region(t) == "CA" else ""), region=region(t), **x) for t in ALL_SECTOR_ETFS for x in [day_chg(t)] if x]
+    movers = []
+    for t in tickers:
+        x = day_chg(t)
+        d = data.get(t)
+        if not x or d is None or len(d) < 51:
+            continue
+        min_dv = CFG["min_dollar_vol_ca"] if region(t) == "CA" else CFG["min_dollar_vol"]
+        if float((d["Close"] * d["Volume"]).iloc[-51:-1].mean()) < min_dv:
+            continue
+        movers.append(dict(region=region(t), name=PROFILES.get(t, {}).get("Name", ""), **x))
+    movers.sort(key=lambda m: m["chg"])
+    us = [t for t in tickers if region(t) == "US"]
+    ca = [t for t in tickers if region(t) == "CA"]
+    br_us, br_ca = breadth_today(data, us), breadth_today(data, ca)
+    regime = ""
+    try:
+        spy = data["SPY"]
+        st = market_state(spy, ctx["breadth"]["US"], spy.index[-1], ctx["internals"]["US"], ctx["credit"], ctx["banks"]["US"])
+        vix = float(data["^VIX"]["Close"].iloc[-1]) if "^VIX" in data else np.nan
+        regime = market_regime(st, br_us, vix)[0]
+    except Exception:
+        pass
+    vx = day_chg("^VIX")
+
+    def clean(v):
+        return None if v is None or (isinstance(v, float) and not np.isfinite(v)) else v
+    brief = dict(date=today.isoformat(), time=now.strftime("%H:%M"), session_pct=round(frac * 100),
+                 indexes=idx, sectors=sorted(sec, key=lambda s: -s["chg"]),
+                 gainers=movers[::-1][:5], losers=movers[:5], regime=regime,
+                 vix=vx, breadth_us=dict(adv=br_us["adv"], dec=br_us["dec"], a50=clean(br_us["a50"])),
+                 breadth_ca=dict(adv=br_ca["adv"], dec=br_ca["dec"], a50=clean(br_ca["a50"])),
+                 breakouts=n_found, radar=n_radar)
+    with open(os.path.join(outdir, "live_brief.json"), "w") as f:
+        json.dump(brief, f, default=lambda o: o.item() if hasattr(o, "item") else str(o))
+    return brief
+
+
+def _last_full_scan(outdir):
+    scans = sorted(f for f in os.listdir(outdir) if f.startswith("breakouts_") and f.endswith(".html"))
+    if not scans:
+        return None
+    try:
+        return dt.date.fromisoformat(scans[-1][len("breakouts_"):-len(".html")])
+    except ValueError:
+        return None
+
+
+def live_brief_html(outdir, now):
+    """'Market right now' strip for the morning check; empty if today's live scan hasn't run."""
+    import json
+    try:
+        b = json.load(open(os.path.join(outdir, "live_brief.json")))
+    except Exception:
+        return ""
+    if b.get("date") != now.date().isoformat():
+        return ""
+
+    def pc(x):
+        c = x["chg"]
+        return f'<b style="color:{"#16794a" if c >= 0 else "#b42318"}">{c:+.1f}%</b>'
+    idx = " &middot; ".join(f'{x["name"]} {pc(x)}' for x in b["indexes"]) or "index data not available"
+    secs = b.get("sectors") or []
+    sec_txt = ""
+    if secs:
+        sec_txt = (f'<br>Leading sectors: {", ".join(s["name"] + " " + pc(s) for s in secs[:3])}; '
+                   f'lagging: {", ".join(s["name"] + " " + pc(s) for s in secs[-3:][::-1])}')
+    mv = lambda lst: ", ".join(f'{m["t"]} {pc(m)}' for m in lst)
+    mov = (f'<br>Biggest gainers: {mv(b["gainers"])}<br>Biggest decliners: {mv(b["losers"])}'
+           if b.get("gainers") else "")
+    bu, bc = b.get("breadth_us") or {}, b.get("breadth_ca") or {}
+    brd = (f'<br>Breadth: US {bu.get("adv", 0)} up / {bu.get("dec", 0)} down, TSX {bc.get("adv", 0)} up / {bc.get("dec", 0)} down'
+           + (f'; VIX {b["vix"]["last"]:.1f} ({b["vix"]["chg"]:+.1f}%)' if b.get("vix") else "")
+           + (f'. Regime: <b>{b["regime"]}</b>' if b.get("regime") else ""))
+    return (f'<p style="margin:6px 0 0;font-size:14px"><b>Market right now ({b["time"]} ET):</b> {idx}{sec_txt}{mov}{brd}.'
+            f'<br>Full live scan of all six indexes: {b["breakouts"]} breakouts forming, {b["radar"]} on the radar '
+            f'(<a href="live.html">live report</a>, volume projected from {b["session_pct"]}% of a normal day).</p>')
 
 
 def inject_morning_summary(outdir, items, stamp, now):
@@ -2664,9 +2767,10 @@ def inject_morning_summary(outdir, items, stamp, now):
     block = (f'<!--MORNING--><section style="background:var(--card);border:1px solid var(--line);'
              f'border-left:6px solid #1d5fbf;border-radius:12px;padding:12px 14px;margin:10px 0">'
              f'<span style="display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em">'
-             f'Morning check &middot; {now:%a %b %d} &middot; {stamp}</span>{body}'
+             f'Morning update &middot; {now:%a %b %d} &middot; {stamp}</span>{live_brief_html(outdir, now)}{body}'
              f'<p style="margin:8px 0 0;font-size:13px"><a href="morning.html">Full morning check</a> &middot; '
-             f'the rest of this report is from the last close; the next full scan runs after today\'s close.</p>'
+             f'<a href="live.html">Live report</a> &middot; the rest of this page is the full scan from the close of '
+             f'{_last_full_scan(outdir) or dt.date.today():%a %b %d}; the next one runs after today\'s close.</p>'
              f'</section><!--/MORNING-->')
     for name in (scans[-1], "live.html"):
         path = os.path.join(outdir, name)
@@ -3120,7 +3224,9 @@ def main():
     holdings = load_holdings(os.path.join(a.outdir, "holdings.csv"))
     tracked |= {str(h[k]).strip() for h in holdings for k in ("Ticker", "TrendTicker") if str(h.get(k) or "").strip()}
     ctx_t = ["SPY", "DIA", "QQQ", "IWM", "XIU.TO"]
-    raw = download(sorted(set(tickers) | set(ctx_t) | tracked | set(ALL_SECTOR_ETFS) | set(MACRO_TICKERS) | set(STRESS_TICKERS),
+    brief_t = {t for t, _ in BRIEF_INDEXES} if LIVE["on"] else set()      # morning brief: the real indexes
+    raw = download(sorted(set(tickers) | set(ctx_t) | tracked | set(ALL_SECTOR_ETFS) | set(MACRO_TICKERS) | set(STRESS_TICKERS)
+                          | brief_t,
                           key=lambda t: (region(t) != "CA", t)))   # TSX first, so any late data trouble hits US names
     DIAG.append(f"Universe {len(tickers)} unique tickers; price data received for {len(raw)}")
     data = {}
@@ -3222,6 +3328,10 @@ def main():
         write_html(os.path.join(a.outdir, "live.html"), asof, live_rows, res, data, market_context(data), len(data),
                    review, title="Live preview", subtitle=sub, radar=radar)
         print(f"Live preview: {len(res)} setups in progress -> {os.path.join(a.outdir, 'live.html')}")
+        try:
+            write_live_brief(a.outdir, data, tickers, ctx, len(found), len(radar), frac)
+        except Exception as e:
+            print("Live brief failed:", e)
         return
     rows = update_tracker(rows, res, data, asof)
     pd.DataFrame(rows, columns=TRACK_COLS).to_csv(tracker_path, index=False)

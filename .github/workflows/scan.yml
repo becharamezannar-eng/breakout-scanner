@@ -68,6 +68,18 @@ jobs:
         if: steps.mode.outputs.mode == 'scan'
         run: python breakout_scanner.py --outdir reports ${{ github.event_name == 'workflow_dispatch' && '--auto' || '' }}
 
+      - name: Morning full market scan (live, all six indexes)
+        # Fresh indexes, sectors, movers, breadth and breakouts forming today. Only while the market is open;
+        # if it fails, the morning check below still runs.
+        if: steps.mode.outputs.mode == 'morning'
+        continue-on-error: true
+        run: |
+          if python -c "import sys, breakout_scanner as b; sys.exit(0 if b.market_open_now() else 1)"; then
+            python breakout_scanner.py --outdir reports --live
+          else
+            echo "Market closed: no live scan."
+          fi
+
       - name: Morning check
         if: steps.mode.outputs.mode == 'morning'
         env:
