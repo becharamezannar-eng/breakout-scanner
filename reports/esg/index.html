@@ -1,0 +1,221 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Breakout Scan 2026-10-16</title>
+<style>
+:root{--bg:#f6f6f4;--card:#fff;--ink:#1c1c1e;--muted:#6b6b70;--line:#e6e6e3;--up:#16794a;--dn:#b42318}
+@media (prefers-color-scheme:dark){:root{--bg:#151517;--card:#1f1f22;--ink:#ececee;--muted:#9a9aa0;--line:#2e2e33;--up:#4cc38a;--dn:#ff6b5e}}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 2px} h2{font-size:17px;margin:26px 0 2px} h3{font-size:20px;margin:0}
+.hint,.sub,.empty{color:var(--muted);font-size:13px;margin:2px 0 10px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+.chip{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;color:#fff;background:var(--c,#555)}
+.mkts{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:10px 0}
+.mk{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;display:grid;grid-template-columns:1fr auto;font-size:13px}
+.mk span{color:var(--muted);grid-column:1/3} .mk em{font-style:normal;text-align:right} .mk small{grid-column:1/3;color:var(--muted)}
+.mk small.uptrend{color:var(--up)} .mk small.downtrend{color:var(--dn)}
+.up{color:var(--up)} .dn{color:var(--dn)}
+.card{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c);border-radius:12px;padding:14px;margin:10px 0}
+.card header{display:flex;justify-content:space-between;gap:10px} .right{text-align:right}
+.badge{background:var(--c);color:#fff;font-weight:700;font-size:13px;padding:4px 10px;border-radius:8px;white-space:nowrap}
+.px{font-size:18px;font-weight:600;margin:6px 0 0}
+.do{margin:10px 0;font-size:15px}
+.co{background:var(--bg);border-radius:8px;padding:8px 10px;margin:10px 0 0;font-size:13px}
+.co p{margin:0} .coname span{color:var(--muted);font-size:12px;display:block} .codesc{margin-top:4px!important;line-height:1.45}
+.co details{margin-top:4px} .co a{color:var(--ink)}
+td.cn{white-space:normal;min-width:150px;max-width:220px}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-size:13px}
+.facts div{background:var(--bg);border-radius:8px;padding:6px 8px} .facts span{display:block;color:var(--muted);font-size:11px}
+.flags{margin-top:8px} .flag{display:inline-block;font-size:12px;color:#a15c00;background:#a15c0018;border-radius:6px;padding:2px 8px;margin:2px 4px 0 0}
+details{margin-top:10px} summary{cursor:pointer;color:var(--muted);font-size:13px} details img{width:100%;border-radius:8px;margin-top:8px}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+table.sum td,table.sum th{font-size:13px;padding:8px} table.sum .chip{font-size:11px;padding:2px 8px}
+.tk{position:sticky;left:0;background:var(--card);z-index:1} .tk a{color:var(--ink);font-weight:700} table{border-collapse:collapse;font-size:12px;width:100%;background:var(--card)}
+th,td{padding:6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap} th{color:var(--muted);font-weight:600}
+ul.gl{list-style:none;padding:0;font-size:13px} ul.gl li{margin:8px 0}
+footer{color:var(--muted);font-size:12px;margin:30px 0 10px}
+
+.review{margin:10px 0 6px}
+.stance{background:var(--card);border:1px solid var(--line);border-left:6px solid var(--c);border-radius:12px;padding:12px 14px}
+.stance span{display:block;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.stance b{font-size:22px;color:var(--c)} .stance p{margin:4px 0 0}
+.story{font-size:15px;line-height:1.5;margin:8px 0 12px;padding:0;list-style:none}
+.story li{margin:0 0 8px} .story b{color:var(--ink)}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.tile span{display:block;color:var(--muted);font-size:11px} .tile b{font-size:18px} .tile small{display:block;color:var(--muted);font-size:11px}
+table.mr td,table.mr th{font-size:13px;padding:7px 8px} table.mr tr.sep td{color:var(--muted);font-size:11px;text-transform:uppercase;background:var(--bg)}
+td.uptrend{color:var(--up)} td.downtrend{color:var(--dn)} td.mixed{color:#a15c00}
+.secs{display:grid;grid-template-columns:1fr;gap:10px} h4{margin:10px 0 4px;font-size:13px;color:var(--muted)}
+.sr{display:grid;grid-template-columns:150px 1fr 54px;gap:8px;align-items:center;font-size:13px;margin:4px 0}
+.sr i{display:block;height:8px;background:var(--line);border-radius:4px;overflow:hidden} .sr i b{display:block;height:100%}
+.sr i b.up{background:var(--up)} .sr i b.dn{background:var(--dn)} .sr em{font-style:normal;text-align:right}
+@media (min-width:640px){.secs{grid-template-columns:1fr 1fr}}
+@media (max-width:420px){.tiles{grid-template-columns:repeat(2,1fr)}}
+
+.lookbar{display:flex;gap:6px;margin:8px 0 4px} .lookbar input{flex:1;min-width:0;padding:9px 10px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:15px}
+.lookbar button{padding:9px 14px;border-radius:9px;border:0;background:var(--ink);color:var(--bg);font-weight:600}
+.runbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
+.runbar button{font:600 14px/1 -apple-system,"Segoe UI",Roboto,sans-serif;border:0;border-radius:10px;padding:11px 14px;cursor:pointer;
+  background:#1d5fbf;color:#fff} .runbar button.alt{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+.runbar button:disabled{opacity:.6}
+#runstatus{font-size:13px;color:var(--muted);width:100%}
+#runsetup{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:8px 0;font-size:14px;display:none}
+#runsetup input{width:100%;font:14px monospace;padding:9px;border:1px solid var(--line);border-radius:8px;margin:6px 0;background:var(--bg);color:var(--ink)}
+#runsetup ol{padding-left:20px;margin:6px 0} #runsetup li{margin:4px 0}
+#runsetup button{font:600 14px/1 -apple-system,"Segoe UI",Roboto,sans-serif;border:0;border-radius:10px;padding:10px 14px;background:#1d5fbf;color:#fff;cursor:pointer}
+#runsetup button.alt{background:var(--bg);color:var(--ink);border:1px solid var(--line)}
+
+.score{display:inline-block;font-size:13px;font-weight:700;padding:1px 7px;border-radius:6px;vertical-align:middle;background:#8884;color:var(--ink)}
+.score small{font-weight:400;opacity:.7} .score.gA{background:#16794a;color:#fff} .score.gB{background:#1d5fbf;color:#fff} .score.gC{background:#6b6b6b;color:#fff}
+.sbs{margin:8px 0} .sb{display:grid;grid-template-columns:80px 1fr 44px;gap:8px;align-items:center;font-size:12px;margin:3px 0}
+.sb i{display:block;height:8px;background:var(--line);border-radius:4px;overflow:hidden} .sb i b{display:block;height:100%;background:var(--c)}
+.sb em{font-style:normal;color:var(--muted);text-align:right}
+ul.ck{list-style:none;padding:0;margin:6px 0;font-size:13px} ul.ck li{margin:3px 0} ul.ck li.grp{color:var(--muted);font-size:11px;text-transform:uppercase;margin-top:8px}
+ul.ck b{display:inline-block;width:20px} .ok{color:var(--up)} .no{color:var(--dn)} .na{color:var(--muted)}
+.wl{font-size:12px;color:var(--muted);margin-right:4px}
+.rg{font-size:13px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:6px 0}
+.links{font-size:13px} a{color:#1d5fbf}
+
+details.esg{background:#f3f8f4;border:1px solid #cfe3d4;border-radius:10px;padding:8px 10px;margin:8px 0}
+details.esg summary{cursor:pointer;font-weight:600}
+.eg{color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;margin-right:4px}
+.sdg{display:inline-block;background:#e6f0fa;color:#123;border-radius:6px;padding:2px 7px;margin:2px;font-size:12px}
+table.ungc{width:100%}table.ungc td,table.ungc th{font-size:13px;vertical-align:top;white-space:normal}
+.esgtab{width:100%}.esgtab td{font-size:13px}
+.esgsum p{margin:4px 0}
+@media (prefers-color-scheme:dark){details.esg{background:#16231a;border-color:#2c4a35}.sdg{background:#1d2b3a;color:#dce8f5}}
+</style></head><body><main><p class="links"><b>ESG scanner</b> &middot; <a href="../index.html">Main scanner</a> &middot; <a href="index.html">ESG home</a> &middot; <a href="../app/">App</a></p>
+<h1>ESG scanner</h1>
+<p class="hint">ESG-only scan: 0 companies that meet the UN-based criteria &middot; 758 stocks scanned &middot; 0 new setups</p>
+
+<div class="runbar">
+  <button id="btn-scan" onclick="runNow('scan')">&#8635; Scan now</button>
+  <button class="alt" id="btn-morning" onclick="runNow('morning')">Morning check now</button>
+  <button class="alt" onclick="toggleSetup()">&#9881;</button>
+  <div id="runstatus"></div>
+</div>
+
+<form class="lookbar" onsubmit="event.preventDefault(); esgLook();">
+  <input id="elk" placeholder="ESG search: ticker or name" autocomplete="off"
+         autocapitalize="characters" maxlength="15" oninput="esgFilter(this.value)">
+  <button type="submit">ESG analyze</button>
+</form>
+<script>
+window.esgFilter = q => { q = (q || '').trim().toUpperCase();
+  document.querySelectorAll('#esglist tr[data-k]').forEach(r => { r.style.display = !q || r.dataset.k.includes(q) ? '' : 'none'; }); };
+window.esgLook = () => { const k = (document.getElementById('elk').value || '').trim().toUpperCase().replace(/ +/g, '');
+  if (!/^[A-Z0-9][A-Z0-9.=^-]{0,14}$/.test(k)) { document.getElementById('runstatus').textContent = 'Type a ticker, e.g. RY.TO or MSFT.'; return; }
+  runNow('esg_lookup', k); };
+</script>
+<div id="runsetup">
+  <b>One-time setup for the Scan now button</b>
+  <ol>
+    <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub &rarr; new fine-grained token</a>.</li>
+    <li>Name it "scan button", set an expiry (up to 1 year).</li>
+    <li>Repository access: <b>Only select repositories</b> &rarr; <b>breakout-scanner</b>.</li>
+    <li>Permissions &rarr; Repository &rarr; <b>Actions: Read and write</b>. Nothing else.</li>
+    <li>Generate, copy the token, paste it here and tap Save.</li>
+  </ol>
+  <input id="tok" type="password" placeholder="github_pat_..." autocomplete="off">
+  <button onclick="saveTok()">Save on this device</button> <button class="alt" onclick="clearTok()">Remove</button>
+  <p class="hint">The token stays in this browser only. It can do nothing except start and read runs of this one repository.
+  Without it, the buttons open GitHub's Run page instead.</p>
+</div>
+<script>
+(function(){
+  const owner = location.hostname.split('.')[0];
+  const repo = location.pathname.split('/').filter(Boolean)[0] || 'breakout-scanner';
+  const api = `https://api.github.com/repos/${owner}/${repo}/actions`;
+  const base = `/${repo}/`;
+  const KEY = 'scanTok';
+  const st = document.getElementById('runstatus');
+  const get = () => { try { return localStorage.getItem(KEY) || ''; } catch(e) { return ''; } };
+  window.toggleSetup = () => { const s = document.getElementById('runsetup'); s.style.display = s.style.display === 'block' ? 'none' : 'block'; };
+  window.saveTok = () => { try { localStorage.setItem(KEY, document.getElementById('tok').value.trim()); } catch(e) {} toggleSetup(); st.textContent = 'Saved. Tap Scan now.'; };
+  window.clearTok = () => { try { localStorage.removeItem(KEY); } catch(e) {} st.textContent = 'Token removed from this device.'; };
+  const H = t => ({ 'Authorization': 'Bearer ' + t, 'Accept': 'application/vnd.github+json' });
+  window.lookUp = () => {
+    const k = (document.getElementById('lk').value || '').trim().toUpperCase().replace(/ +/g, '');
+    if (!/^[A-Z0-9][A-Z0-9.=^-]{0,14}$/.test(k)) { st.textContent = 'Type a ticker, e.g. SHOP.TO or NVDA.'; return; }
+    runNow('lookup', k);
+  };
+  window.runNow = async (mode, ticker) => {
+    const t = get();
+    if (!t) { window.open(`https://github.com/${owner}/${repo}/actions/workflows/scan.yml`, '_blank');
+      st.innerHTML = 'On GitHub: tap <b>Run workflow</b>, pick <b>' + mode + '</b>' + (ticker ? ', type <b>' + ticker + '</b>' : '') + ', then <b>Run workflow</b>. Or set up one-tap runs with &#9881;.'; return; }
+    document.querySelectorAll('.runbar button, .lookbar button').forEach(b => b.disabled = true);
+    const started = new Date();
+    st.textContent = 'Starting ' + (ticker ? 'lookup of ' + ticker : mode) + '...';
+    const inputs = ticker ? { mode, ticker } : { mode };
+    try {
+      const r = await fetch(`${api}/workflows/scan.yml/dispatches`, { method: 'POST', headers: H(t),
+        body: JSON.stringify({ ref: 'main', inputs }) });
+      if (r.status !== 204) { throw new Error(r.status === 401 || r.status === 403 ? 'token rejected - check it in setup' : 'GitHub said ' + r.status); }
+      let run = null;
+      for (let i = 0; i < 160; i++) {
+        await new Promise(res => setTimeout(res, i < 3 ? 5000 : 15000));
+        const q = await fetch(`${api}/runs?event=workflow_dispatch&per_page=5`, { headers: H(t) });
+        const j = await q.json();
+        run = (j.workflow_runs || []).find(x => new Date(x.created_at) >= new Date(started - 60000));
+        const mins = Math.round((new Date() - started) / 60000);
+        if (!run) { st.textContent = 'Waiting for GitHub to start the run...'; continue; }
+        if (run.status !== 'completed') { st.textContent = (run.status === 'queued' ? 'Queued (another run is finishing first)' : 'Running') + ' (' + mins + ' min). '
+          + (ticker ? 'A lookup takes about 2-3 minutes.' : 'A full scan takes about 6-8 minutes.') + ' You can leave this page open.'; continue; }
+        if (run.conclusion === 'success') {
+          st.textContent = 'Done. Reloading...';
+          const ny = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+          const mins = ny.getHours() * 60 + ny.getMinutes();
+          const open = ny.getDay() > 0 && ny.getDay() < 6 && mins >= 570 && mins < 960;
+          const page = mode === 'esg_lookup' ? 'esg/lookup/' + ticker + '.html' : mode === 'esg' ? 'esg/index.html' : ticker ? 'lookup/' + ticker + '.html' : mode === 'morning' ? 'morning.html' : (open ? 'live.html' : 'index.html');
+          setTimeout(() => { location.href = base + page + '?t=' + Date.now(); }, 25000);
+        } else { st.innerHTML = 'The run ended with "' + run.conclusion + '". <a href="' + run.html_url + '" target="_blank">See details</a>.'; }
+        break;
+      }
+    } catch (e) { st.textContent = 'Could not start: ' + e.message; }
+    document.querySelectorAll('.runbar button, .lookbar button').forEach(b => b.disabled = false);
+  };
+})();
+</script>
+
+<!--MORNING--><!--/MORNING-->
+<section class="review esgsum"><h2>ESG daily summary &middot; close of Fri Oct 16</h2>
+<p><b>0</b> of 0 rated companies qualify (0 ESG leaders; 0 Canadian), out of
+722 in the S&P 500, Dow, S&P/TSX Composite and TSX 60.</p>
+<p>ESG breakouts today: <b>0</b> (0 pass the Buy gate); on the ESG radar: <b>0</b>.</p>
+<p>Average move today: qualified ESG companies - vs all companies <b class="dn">-0.3%</b>.</p>
+<p>Biggest ESG gainers: -<br>Biggest ESG decliners: -</p>
+<p>Qualified companies by sector: </p>
+<div class="wrap"><table class="mr"><tr><th class="tk">ESG funds vs the market</th><th>Last</th><th>1 day</th><th>1 month</th><th>YTD</th></tr><tr><td class='tk'>iShares ESG Aware MSCI USA</td><td>166.85</td><td><b class="dn">-1.1%</b></td><td><b class="up">+0.2%</b></td><td><b class="up">+12.8%</b></td></tr><tr><td class='tk'>iShares MSCI USA ESG Select</td><td>155.68</td><td><b class="dn">-1.2%</b></td><td><b class="up">+0.2%</b></td><td><b class="up">+12.4%</b></td></tr><tr><td class='tk'>iShares ESG Aware MSCI Canada</td><td>44.00</td><td><b class="up">+0.1%</b></td><td><b class="up">+1.7%</b></td><td><b class="up">+15.9%</b></td></tr><tr><td class='tk'>S&amp;P 500 (SPY)</td><td>763.25</td><td><b class="dn">-1.1%</b></td><td><b class="up">+0.3%</b></td><td><b class="up">+12.8%</b></td></tr><tr><td class='tk'>S&amp;P/TSX 60 (XIU)</td><td>54.17</td><td><b class="up">+0.1%</b></td><td><b class="up">+2.6%</b></td><td><b class="up">+17.2%</b></td></tr></table></div>
+<details><summary>How companies qualify (UN standards)</summary><ul class="hint">
+<li><b>UN Global Compact</b> (human rights, labour, environment, anti-corruption): no severe controversies (Sustainalytics level 4-5),
+the screen used to flag UNGC breaches.</li>
+<li><b>UN Principles for Responsible Investment</b>: ESG risk is part of the analysis; only Negligible, Low or Medium ESG risk
+(score under 30) qualifies. Under 20 with controversies at level 2 or lower = ESG leader.</li>
+<li><b>Global exclusions</b>: controversial weapons (UN conventions), civilian firearms, tobacco (WHO FCTC), thermal coal and
+oil &amp; gas production, refining and pipelines (EU Paris-Aligned Benchmark rules).</li>
+<li><b>UN SDGs</b>: each company's line of business is linked to the goals it serves.</li>
+<li>Breakouts, radar, scores, stops and targets use exactly the same rules as the main scanner.</li>
+<li>Ratings are refreshed every 30 days. ESG ratings: refreshed 708 (rated 0, not rated 708, errors 0); 0/708 companies have a rating</li></ul></details>
+</section><h2>All qualified ESG companies (0)</h2><p class="hint">Type in the ESG search box to filter. A ticker link opens its ESG brief if it has been analyzed; use <b>ESG analyze</b> for a fresh full report.</p><div class="wrap"><table class="esgtab" id="esglist"><tr><th>Ticker</th><th>Company</th><th>Grade</th><th>ESG risk</th><th>Contro&shy;versy</th><th>Peer group</th><th>Today</th><th>Trend</th></tr></table></div>
+<p class="links"><a href="../index.html">Latest scan</a> &middot; <a href="../live.html">Live preview</a> &middot; <a href="../morning.html">Morning check</a> &middot; <a href="../backtest.html">Backtest</a> &middot; <a href="../archive.html">Past scans</a></p>
+
+<h2>Setups</h2>
+<div class="chips"><span class="chip">Nothing active</span></div>
+
+<section><h2>Act at tomorrow's open</h2><p class="hint">New buys, profit-taking and exits.</p><p class="empty">No action needed tomorrow.</p></section>
+<section><h2>Watchlist</h2><p class="hint">Broke out but not confirmed yet, or too far above the breakout level to buy.</p><p class="empty">Nothing on watch.</p></section>
+<section><h2>On the radar</h2><p class="empty">No tight bases within 3% of breaking out today.</p></section>
+<section><h2>Open positions</h2><p class="hint">Setups that triggered a Buy and are still running.</p><p class="empty">No open positions.</p></section>
+
+<section><h2>What the labels mean</h2><ul class="gl"><li><span class="chip" style="--c:#16794a">Buy</span> Breakout confirmed and it passes the scorecard (70+/100, reward:risk 2+, no earnings within 5 sessions, under 4 warnings). Entry plan below.</li><li><span class="chip" style="--c:#1d5fbf">Watch</span> Breakout not confirmed yet, or it held but doesn't pass the scorecard. Not a buy yet.</li><li><span class="chip" style="--c:#a15c00">Don't chase</span> Breakout held but price ran too far above the breakout level. Wait for a pullback.</li><li><span class="chip" style="--c:#3d4a5c">Hold</span> You own it (if you took the Buy). Keep the stop order in place.</li><li><span class="chip" style="--c:#7a3db8">Take profit</span> Target hit. Sell part, protect the rest.</li><li><span class="chip" style="--c:#3d4a5c">Hold - trailing</span> Holding the remainder with a stop that rises with the price.</li><li><span class="chip" style="--c:#b42318">Sell</span> Exit the position (or your stop order already did).</li><li><span class="chip" style="--c:#6b6b6b">Drop</span> Setup failed or never qualified before entry. Remove from watchlist.</li></ul>
+<p class="hint">Entry, stop and target are calculated from the breakout level. Profit/loss is measured from the close on the day of the Buy signal; your real entry is the next open.
+A Buy is exited early if it closes back below the breakout level within 10 sessions (failed breakout).</p>
+<p class="hint">The score is a pass mark, not a ranking: in the 2022-26 backtest, setups scoring 70-74 did as well as or better than those scoring 75+.
+Position size risks 1% of the account per trade, so a run of 20 losses (Douglas's sample size) would cost about 18%.</p></section>
+
+
+<details><summary>Full scan details (0 setups)</summary><div class="wrap"><p>No new setups today.</p></div></details>
+<details><summary>Scan diagnostics</summary><ul class="hint"><li>S&P/TSX Composite: 219 tickers</li><li>S&P/TSX 60: 59 tickers</li><li>S&P 500: 503 tickers</li><li>DJIA: Wikipedia table unavailable, used built-in 30-stock list</li><li>DJIA: 30 tickers</li><li>Company profiles fetched: 0 from Yahoo, 0 from backup sources, 0 not found (0 already cached)</li></ul></details>
+<footer>Technical screen only - not investment advice. Scores and thresholds are rules of thumb until the backtest supports them.</footer>
+</main></body></html>
