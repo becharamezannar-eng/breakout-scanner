@@ -20,6 +20,10 @@ using the uploaded trading books and live financial data.
 | Ticker analysis on demand | Search box → `lookup/<TICKER>.html` |
 | Code updates | This repository; every book-derived rule is commented `[Author ch.]` |
 | Backtesting | `--backtest`, results in `backtest.html` |
+| Morning full market brief | Morning run does a full live scan first (`--live`), then the morning check; `live_brief.json` |
+| ESG scanner (separate tab) | `esg_scanner.py` -> `esg/index.html`, ESG search -> `esg/lookup/<TICKER>.html` |
+| Phone app | `app/` (installable web app); see `ARCHITECTURE.md` |
+| External accounts and user portfolios | Planned (account service); see `ARCHITECTURE.md` |
 
 ## Schedule (Toronto time, GitHub Actions `.github/workflows/scan.yml`)
 | Run | When | Cron (UTC) |
@@ -29,6 +33,8 @@ using the uploaded trading books and live financial data.
 | Backtest | Saturdays 8:00 am (7:00 am after Nov 1) | `0 12 * * 6` |
 GitHub often starts scheduled runs 15-45 minutes late. "Scan now" and the search box run on demand.
 The schedule stays as is unless Bechara changes it.
+
+Add-ons are modular: they import the core scanner and never change it (see `ARCHITECTURE.md`).
 
 ## Rules for the assistant
 - Always reference both the books and live financial data before answering.

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Market Scanner</title>
+<meta name="description" content="Breakout scanner, portfolio monitor and ESG scanner for the TSX and US markets.">
+<meta name="theme-color" content="#0f2a4a">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Scanner">
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--ink:#14202e;--muted:#5b6b7d;--line:#dde3ea;--accent:#1d5fbf;--bar:#0f2a4a;--up:#16794a;--dn:#b42318}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e141b;--card:#17202a;--ink:#e6edf3;--muted:#9aa7b4;--line:#2a3542;--accent:#6aa5ff;--bar:#0b1d33;--up:#4ade80;--dn:#f87171}}
+:root[data-theme="dark"]{--bg:#0e141b;--card:#17202a;--ink:#e6edf3;--muted:#9aa7b4;--line:#2a3542;--accent:#6aa5ff;--bar:#0b1d33;--up:#4ade80;--dn:#f87171}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{background:var(--bar);color:#fff;padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;display:flex;align-items:center;gap:10px}
+header img{width:28px;height:28px;border-radius:6px}
+header h1{font-size:17px;margin:0;font-weight:650}
+header .who{margin-left:auto;font-size:12px;opacity:.8}
+.view{display:none;position:absolute;top:var(--top,52px);bottom:calc(60px + env(safe-area-inset-bottom));left:0;right:0;overflow:auto}
+.view.on{display:block}
+.view iframe{width:100%;height:100%;border:0;background:var(--bg)}
+.pad{padding:14px 16px;max-width:760px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:0 0 12px}
+.card h2{font-size:15px;margin:0 0 6px}
+.muted{color:var(--muted);font-size:13px}
+.up{color:var(--up);font-weight:650}.dn{color:var(--dn);font-weight:650}
+.links{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.links a,.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;border:0;border-radius:9px;padding:9px 13px;font:inherit;font-weight:600}
+.links a.alt{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;background:none;border:0;color:var(--muted);font:600 12px system-ui,sans-serif;padding:8px 0 10px;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer}
+nav button svg{width:22px;height:22px}
+nav button.on{color:var(--accent)}
+.strip{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:14px}
+input{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);width:100%}
+#install{display:none}
+</style>
+</head>
+<body>
+<header><img src="icon-192.png" alt=""><h1>Market Scanner</h1><span class="who" id="who"></span></header>
+
+<section class="view" id="v-scan">
+  <div class="pad">
+    <div class="card" id="brief"><h2>Market right now</h2><p class="muted">Loading today's market brief...</p></div>
+    <div class="card"><h2>Reports</h2>
+      <div class="links"><a href="#" data-open="../index.html">Evening scan</a><a class="alt" href="#" data-open="../live.html">Live</a>
+      <a class="alt" href="#" data-open="../morning.html">Morning check</a><a class="alt" href="#" data-open="../backtest.html">Backtest</a></div>
+      <p class="muted">The evening scan is the full report after the close; the morning check refreshes the whole market about 10:15-11:00 am Toronto time.</p></div>
+    <div class="card"><h2>Look up a ticker</h2>
+      <form id="lkf"><input id="lk" placeholder="SHOP.TO, NVDA, L.TO..." autocapitalize="characters" maxlength="15"></form>
+      <p class="muted">Opens the latest analysis. New lookups are started from the report page's search box.</p></div>
+    <button class="btn" id="install">Install on this phone</button>
+  </div>
+</section>
+<section class="view" id="v-report"><iframe id="frame" title="Report"></iframe></section>
+<section class="view" id="v-port"><div class="pad" id="port"></div></section>
+<section class="view" id="v-esg"><iframe id="esgframe" title="ESG scanner"></iframe></section>
+<section class="view" id="v-acct"><div class="pad" id="acct"></div></section>
+
+<nav>
+  <button data-tab="scan" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-5 4 4 8-8"/><path d="M14 8h6v6"/></svg>Scanner</button>
+  <button data-tab="port"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>Portfolio</button>
+  <button data-tab="esg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 19c0-8 6-14 15-15-1 9-7 15-15 15z"/><path d="M5 19l7-7"/></svg>ESG</button>
+  <button data-tab="acct"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Account</button>
+</nav>
+
+<script>
+(function () {
+  // Owner = this device already holds the Scan-now key from the report pages. No username or password.
+  let owner = false;
+  try { owner = !!localStorage.getItem('scanTok'); } catch (e) {}
+  document.getElementById('who').textContent = owner ? 'Owner device' : '';
+
+  const views = { scan: 'v-scan', report: 'v-report', port: 'v-port', esg: 'v-esg', acct: 'v-acct' };
+  const show = (k) => {
+    Object.values(views).forEach(id => document.getElementById(id).classList.remove('on'));
+    document.getElementById(views[k]).classList.add('on');
+    document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === k || (k === 'report' && b.dataset.tab === 'scan')));
+    if (k === 'esg') { const f = document.getElementById('esgframe'); if (!f.src) f.src = '../esg/index.html'; }
+  };
+  const openReport = (url) => { document.getElementById('frame').src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(); show('report'); };
+  document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.tab));
+  document.querySelectorAll('[data-open]').forEach(a => a.onclick = (ev) => { ev.preventDefault(); openReport(a.dataset.open); });
+  document.getElementById('lkf').onsubmit = (ev) => { ev.preventDefault();
+    const k = document.getElementById('lk').value.trim().toUpperCase().replace(/ +/g, '');
+    if (/^[A-Z0-9][A-Z0-9.=^-]{0,14}$/.test(k)) openReport('../lookup/' + k + '.html'); };
+  document.documentElement.style.setProperty('--top', document.querySelector('header').offsetHeight + 'px');
+
+  // Market brief from the morning's full live scan
+  const fmt = x => `<span class="${x >= 0 ? 'up' : 'dn'}">${x >= 0 ? '+' : ''}${x.toFixed(1)}%</span>`;
+  fetch('../live_brief.json?t=' + Date.now()).then(r => r.ok ? r.json() : null).then(b => {
+    const el = document.getElementById('brief');
+    if (!b) { el.innerHTML = '<h2>Market right now</h2><p class="muted">No live brief yet today. Open the evening scan for the last close.</p>'; return; }
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
+    const stale = b.date !== today ? ` <b>(from ${b.date}, not today)</b>` : '';
+    el.innerHTML = `<h2>Market at ${b.time} ET${stale}</h2><div class="strip">${b.indexes.map(i => `<span>${i.name} ${fmt(i.chg)}</span>`).join('')}</div>`
+      + (b.regime ? `<p class="muted">Regime: <b>${b.regime}</b> &middot; ${b.breakouts} breakouts forming, ${b.radar} on the radar</p>` : '')
+      + (b.gainers && b.gainers.length ? `<p class="muted">Top gainers: ${b.gainers.slice(0, 3).map(m => m.t + ' ' + fmt(m.chg)).join(', ')}</p>` : '');
+  }).catch(() => {});
+
+  // Portfolio and Account tabs: external accounts are switched on once the account service is connected
+  const ACCOUNTS_READY = false;
+  document.getElementById('port').innerHTML = owner
+    ? `<div class="card"><h2>Your portfolio</h2><p class="muted">Your positions and their trend reads are in the evening report.</p>
+       <div class="links"><a href="#" id="myport">Open my portfolio</a></div></div>`
+    : `<div class="card"><h2>My portfolio</h2><p class="muted">${ACCOUNTS_READY ? 'Sign in to add your holdings.' :
+       'Personal portfolios open soon: sign in, add each holding (ticker, purchase price, purchase date) and the scanner will watch it every evening with the same rules.'}</p></div>`;
+  const mp = document.getElementById('myport'); if (mp) mp.onclick = (ev) => { ev.preventDefault(); openReport('../index.html#portfolio'); };
+  document.getElementById('acct').innerHTML = owner
+    ? `<div class="card"><h2>Owner device</h2><p class="muted">This phone holds your Scan-now key, so it opens in owner mode with no login.</p></div>`
+    : `<div class="card"><h2>Account</h2><p class="muted">${ACCOUNTS_READY ? '' : 'Accounts are not open yet.'}</p></div>`;
+
+  // Install prompt (Android / Chrome); iPhone: Share > Add to Home Screen
+  let deferred;
+  window.addEventListener('beforeinstallprompt', (ev) => { ev.preventDefault(); deferred = ev; document.getElementById('install').style.display = 'inline-block'; });
+  document.getElementById('install').onclick = () => deferred && deferred.prompt();
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+  show('scan');
+})();
+</script>
+</body>
+</html>

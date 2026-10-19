@@ -17,7 +17,7 @@ on:
       mode:
         description: "What to run"
         type: choice
-        options: [scan, morning, backtest, lookup]
+        options: [scan, morning, backtest, lookup, esg, esg_lookup]
         default: scan
       ticker:
         description: "Ticker for a lookup (e.g. SHOP.TO, NVDA)"
@@ -68,6 +68,20 @@ jobs:
         if: steps.mode.outputs.mode == 'scan'
         run: python breakout_scanner.py --outdir reports ${{ github.event_name == 'workflow_dispatch' && '--auto' || '' }}
 
+      - name: ESG scan (separate tab; cannot stop the main scan)
+        if: steps.mode.outputs.mode == 'scan' || steps.mode.outputs.mode == 'esg'
+        continue-on-error: true
+        timeout-minutes: 40
+        run: python esg_scanner.py --selftest && python esg_scanner.py --outdir reports
+
+      - name: ESG ticker lookup
+        if: steps.mode.outputs.mode == 'esg_lookup'
+        continue-on-error: true
+        env:
+          TICKER: ${{ inputs.ticker }}
+          ESG_LOOKUP: "1"
+        run: python esg_scanner.py --outdir reports
+
       - name: Morning full market scan (live, all six indexes)
         # Fresh indexes, sectors, movers, breadth and breakouts forming today. Only while the market is open;
         # if it fails, the morning check below still runs.
@@ -103,6 +117,9 @@ jobs:
           cp "$latest" site/index.html
           cp reports/*.html reports/*.csv site/
           if [ -d reports/lookup ]; then cp -r reports/lookup site/; fi
+          if [ -d reports/esg ]; then cp -r reports/esg site/; fi
+          if [ -d app ]; then cp -r app site/; fi
+          if [ -f reports/live_brief.json ]; then cp reports/live_brief.json site/; fi
           {
             echo '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
             echo '<title>Scan archive</title><body style="font-family:sans-serif;margin:16px"><h1>Past scans</h1><ul>'

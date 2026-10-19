@@ -37,3 +37,5 @@ Every book-derived line in the code carries a `[Author ch.]` comment.
 All thresholds live in the `CFG`, `TRADE` and `ACCOUNT` blocks at the top of `breakout_scanner.py`.
 
 Technical screen only, not investment advice. Check every chart before trading.
+
+Add-ons (ESG scanner, phone app, accounts): see `ARCHITECTURE.md`.

@@ -1949,7 +1949,7 @@ RUN_HTML = """
           const ny = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
           const mins = ny.getHours() * 60 + ny.getMinutes();
           const open = ny.getDay() > 0 && ny.getDay() < 6 && mins >= 570 && mins < 960;
-          const page = ticker ? 'lookup/' + ticker + '.html' : mode === 'morning' ? 'morning.html' : (open ? 'live.html' : 'index.html');
+          const page = mode === 'esg_lookup' ? 'esg/lookup/' + ticker + '.html' : mode === 'esg' ? 'esg/index.html' : ticker ? 'lookup/' + ticker + '.html' : mode === 'morning' ? 'morning.html' : (open ? 'live.html' : 'index.html');
           setTimeout(() => { location.href = base + page + '?t=' + Date.now(); }, 25000);
         } else { st.innerHTML = 'The run ended with "' + run.conclusion + '". <a href="' + run.html_url + '" target="_blank">See details</a>.'; }
         break;
@@ -2238,7 +2238,7 @@ def portfolio_html(holdings, data, rows, usdcad=np.nan):
     tot = (f'<p class="hint">Total about <b>${tot_cad:,.0f} CAD</b> '
            f'({(tot_cad / cost_cad - 1) * 100:+.1f}% vs cost; USD converted at {usdcad:.4f}).</p>'
            if cost_cad > 0 and np.isfinite(usdcad) else "")
-    return (f'<section><h2>Your portfolio</h2><p class="hint">Your own positions from <code>holdings.csv</code>. '
+    return (f'<section id="portfolio"><h2>Your portfolio</h2><p class="hint">Your own positions from <code>holdings.csv</code>. '
             f'ETFs and long-term holdings get a trend read (50- and 200-day averages); breakout trades follow the '
             f'tracker rules. Trend signals only, not advice.</p>{tot}{"".join(cards)}</section>')
 
@@ -2657,31 +2657,54 @@ BRIEF_INDEXES = [("^GSPC", "S&P 500"), ("^IXIC", "Nasdaq"), ("^DJI", "Dow"), ("^
                  ("^GSPTSE", "S&P/TSX")]
 
 
-def write_live_brief(outdir, data, tickers, ctx, n_found, n_radar, frac):
+def write_live_brief(outdir, data, tickers, ctx, n_found, n_radar, frac, raw=None):
     """Morning fix: a small JSON snapshot of today's market from the full live scan, read by the morning check."""
     import json
     now = dt.datetime.now(ET)
     today = now.date()
+    errors = []
 
-    def day_chg(t):
-        d = data.get(t)
-        if d is None or len(d) < 2 or pd.Timestamp(d.index[-1]).date() != today:
+    def chg_of(d, t):
+        if d is None:
             return None
-        c0, c1 = float(d["Close"].iloc[-2]), float(d["Close"].iloc[-1])
+        c = d["Close"].dropna()
+        if len(c) < 2 or pd.Timestamp(c.index[-1]).date() != today:
+            return None
+        c0, c1 = float(c.iloc[-2]), float(c.iloc[-1])
         return dict(t=t, last=round(c1, 2), chg=round((c1 / c0 - 1) * 100, 2)) if c0 > 0 else None
 
-    idx = [dict(name=n, **x) for t, n in BRIEF_INDEXES for x in [day_chg(t)] if x]
-    sec = [dict(name=SECTOR_NAMES.get(t, t) + (" (TSX)" if region(t) == "CA" else ""), region=region(t), **x) for t in ALL_SECTOR_ETFS for x in [day_chg(t)] if x]
+    def day_chg(t):
+        return chg_of(data.get(t), t)
+    # indexes, sectors and VIX from their own small download (prices only), so a missing volume figure
+    # in today's unfinished bar can't hide them
+    quick = {}
+    try:
+        quick = download(sorted({t for t, _ in BRIEF_INDEXES} | set(ALL_SECTOR_ETFS) | {"^VIX"}), period="5d")
+    except Exception as e:
+        errors.append(f"quick download: {str(e)[:80]}")
+    q_chg = lambda t: chg_of(quick.get(t), t) or day_chg(t)
+    idx = [dict(name=n, **x) for t, n in BRIEF_INDEXES for x in [q_chg(t)] if x]
+    sec = [dict(name=SECTOR_NAMES.get(t, t) + (" (TSX)" if region(t) == "CA" else ""), region=region(t), **x)
+           for t in ALL_SECTOR_ETFS for x in [q_chg(t)] if x]
     movers = []
+    cover = {"US": [0, 0], "CA": [0, 0]}
     for t in tickers:
-        x = day_chg(t)
         d = data.get(t)
-        if not x or d is None or len(d) < 51:
+        if d is None:
+            continue
+        cover[region(t)][1] += 1
+        x = day_chg(t)
+        if not x:
+            continue
+        cover[region(t)][0] += 1
+        if len(d) < 51 or x["last"] < CFG["min_price"] or abs(x["chg"]) > 60:   # penny stocks and data glitches
             continue
         min_dv = CFG["min_dollar_vol_ca"] if region(t) == "CA" else CFG["min_dollar_vol"]
         if float((d["Close"] * d["Volume"]).iloc[-51:-1].mean()) < min_dv:
             continue
         movers.append(dict(region=region(t), name=PROFILES.get(t, {}).get("Name", ""), **x))
+    raw_today = sum(1 for t in tickers if raw is not None and t in raw and len(raw[t])
+                    and pd.Timestamp(raw[t].index[-1]).date() == today)
     movers.sort(key=lambda m: m["chg"])
     us = [t for t in tickers if region(t) == "US"]
     ca = [t for t in tickers if region(t) == "CA"]
@@ -2692,9 +2715,9 @@ def write_live_brief(outdir, data, tickers, ctx, n_found, n_radar, frac):
         st = market_state(spy, ctx["breadth"]["US"], spy.index[-1], ctx["internals"]["US"], ctx["credit"], ctx["banks"]["US"])
         vix = float(data["^VIX"]["Close"].iloc[-1]) if "^VIX" in data else np.nan
         regime = market_regime(st, br_us, vix)[0]
-    except Exception:
-        pass
-    vx = day_chg("^VIX")
+    except Exception as e:
+        errors.append(f"regime: {type(e).__name__} {str(e)[:80]}")
+    vx = q_chg("^VIX")
 
     def clean(v):
         return None if v is None or (isinstance(v, float) and not np.isfinite(v)) else v
@@ -2703,7 +2726,8 @@ def write_live_brief(outdir, data, tickers, ctx, n_found, n_radar, frac):
                  gainers=movers[::-1][:5], losers=movers[:5], regime=regime,
                  vix=vx, breadth_us=dict(adv=br_us["adv"], dec=br_us["dec"], a50=clean(br_us["a50"])),
                  breadth_ca=dict(adv=br_ca["adv"], dec=br_ca["dec"], a50=clean(br_ca["a50"])),
-                 breakouts=n_found, radar=n_radar)
+                 breakouts=n_found, radar=n_radar,
+                 coverage=dict(us=cover["US"], ca=cover["CA"], raw_today=raw_today), errors=errors)
     with open(os.path.join(outdir, "live_brief.json"), "w") as f:
         json.dump(brief, f, default=lambda o: o.item() if hasattr(o, "item") else str(o))
     return brief
@@ -2745,6 +2769,10 @@ def live_brief_html(outdir, now):
     brd = (f'<br>Breadth: US {bu.get("adv", 0)} up / {bu.get("dec", 0)} down, TSX {bc.get("adv", 0)} up / {bc.get("dec", 0)} down'
            + (f'; VIX {b["vix"]["last"]:.1f} ({b["vix"]["chg"]:+.1f}%)' if b.get("vix") else "")
            + (f'. Regime: <b>{b["regime"]}</b>' if b.get("regime") else ""))
+    cov = b.get("coverage") or {}
+    if cov.get("us") and cov.get("ca"):
+        brd += (f' <span style="color:var(--muted)">(today\'s prices in for {cov["us"][0]:,} of {cov["us"][1]:,} US and '
+                f'{cov["ca"][0]} of {cov["ca"][1]} TSX stocks)</span>')
     return (f'<p style="margin:6px 0 0;font-size:14px"><b>Market right now ({b["time"]} ET):</b> {idx}{sec_txt}{mov}{brd}.'
             f'<br>Full live scan of all six indexes: {b["breakouts"]} breakouts forming, {b["radar"]} on the radar '
             f'(<a href="live.html">live report</a>, volume projected from {b["session_pct"]}% of a normal day).</p>')
@@ -3329,7 +3357,7 @@ def main():
                    review, title="Live preview", subtitle=sub, radar=radar)
         print(f"Live preview: {len(res)} setups in progress -> {os.path.join(a.outdir, 'live.html')}")
         try:
-            write_live_brief(a.outdir, data, tickers, ctx, len(found), len(radar), frac)
+            write_live_brief(a.outdir, data, tickers, ctx, len(found), len(radar), frac, raw)
         except Exception as e:
             print("Live brief failed:", e)
         return
