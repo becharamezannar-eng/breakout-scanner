@@ -119,7 +119,7 @@ jobs:
           if [ -d reports/lookup ]; then cp -r reports/lookup site/; fi
           if [ -d reports/esg ]; then cp -r reports/esg site/; fi
           if [ -d app ]; then cp -r app site/; fi
-          if [ -f reports/live_brief.json ]; then cp reports/live_brief.json site/; fi
+          cp reports/*.json site/ 2>/dev/null || true
           {
             echo '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">'
             echo '<title>Scan archive</title><body style="font-family:sans-serif;margin:16px"><h1>Past scans</h1><ul>'

@@ -1924,8 +1924,8 @@ RUN_HTML = """
   };
   window.runNow = async (mode, ticker) => {
     const t = get();
-    if (!t) { window.open(`https://github.com/${owner}/${repo}/actions/workflows/scan.yml`, '_blank');
-      st.innerHTML = 'On GitHub: tap <b>Run workflow</b>, pick <b>' + mode + '</b>' + (ticker ? ', type <b>' + ticker + '</b>' : '') + ', then <b>Run workflow</b>. Or set up one-tap runs with &#9881;.'; return; }
+    if (!t) { document.getElementById('runsetup').style.display = 'block';
+      st.textContent = 'This device needs your GitHub key once (steps below). After that this button works with one tap.'; return; }
     document.querySelectorAll('.runbar button, .lookbar button').forEach(b => b.disabled = true);
     const started = new Date();
     st.textContent = 'Starting ' + (ticker ? 'lookup of ' + ticker : mode) + '...';
@@ -2657,11 +2657,12 @@ BRIEF_INDEXES = [("^GSPC", "S&P 500"), ("^IXIC", "Nasdaq"), ("^DJI", "Dow"), ("^
                  ("^GSPTSE", "S&P/TSX")]
 
 
-def write_live_brief(outdir, data, tickers, ctx, n_found, n_radar, frac, raw=None):
-    """Morning fix: a small JSON snapshot of today's market from the full live scan, read by the morning check."""
+def write_live_brief(outdir, data, tickers, ctx, n_found, n_radar, frac, raw=None, kind="live", session=None):
+    """Morning fix: a small JSON snapshot of today's market from the full live scan, read by the morning check.
+    The evening scan writes the same file with kind='close' for the session it scanned."""
     import json
     now = dt.datetime.now(ET)
-    today = now.date()
+    today = dt.date.fromisoformat(session) if session else now.date()
     errors = []
 
     def chg_of(d, t):
@@ -2721,7 +2722,7 @@ def write_live_brief(outdir, data, tickers, ctx, n_found, n_radar, frac, raw=Non
 
     def clean(v):
         return None if v is None or (isinstance(v, float) and not np.isfinite(v)) else v
-    brief = dict(date=today.isoformat(), time=now.strftime("%H:%M"), session_pct=round(frac * 100),
+    brief = dict(date=today.isoformat(), time=now.strftime("%H:%M"), kind=kind, session_pct=round(frac * 100),
                  indexes=idx, sectors=sorted(sec, key=lambda s: -s["chg"]),
                  gainers=movers[::-1][:5], losers=movers[:5], regime=regime,
                  vix=vx, breadth_us=dict(adv=br_us["adv"], dec=br_us["dec"], a50=clean(br_us["a50"])),
@@ -2732,6 +2733,75 @@ def write_live_brief(outdir, data, tickers, ctx, n_found, n_radar, frac, raw=Non
     with open(os.path.join(outdir, "live_brief.json"), "w") as f:
         json.dump(brief, f, default=lambda o: o.item() if hasattr(o, "item") else str(o))
     return brief
+
+
+def _plain(s):
+    return html_mod.unescape(re.sub(r"<[^>]+>", "", str(s or ""))).strip()
+
+
+def write_app_data(outdir, kind, data, holdings, rows, usdcad, asof, radar=None):
+    """Small JSON files for the phone app, each stamped with when its prices are from.
+    kind = 'close' (evening scan) or 'live' (morning / intraday). portfolio.json always; setups.json at the close."""
+    import json
+    now = dt.datetime.now(ET)
+    stamp = dict(kind=kind, updated=now.strftime("%Y-%m-%d %H:%M"), session=asof)
+    open_rows = {r["Ticker"]: r for r in rows if not r["Closed"]}
+    items, tot, cost_tot = [], 0.0, 0.0
+    for h in holdings:
+        t = str(h["Ticker"]).strip()
+        sh, cost, cur = _num(h.get("Shares")), _num(h.get("AvgCost")), (h.get("Currency") or "CAD").upper()
+        name = h.get("Name") or (PROFILES.get(t) or {}).get("Name") or t
+        d = data.get(t)
+        if d is None or not len(d):
+            items.append(dict(t=t, name=name, status="No price data", color="#6b6b6b", what=""))
+            continue
+        c = float(d["Close"].iloc[-1])
+        fx = usdcad if cur == "USD" else 1.0
+        if np.isfinite(fx):
+            tot += sh * c * fx
+            cost_tot += sh * cost * fx
+        if h.get("Type") == "trade" and t in open_rows:
+            r = open_rows[t]
+            label, color, _ = STATUS_INFO.get(r["Status"], (r["Status"], "#555", ""))
+            what = (f"Breakout trade: stop {_f(_num(r.get('Stop')))}, target {_f(_num(r.get('Target')))}. "
+                    "Sell if it closes below the stop.")
+        else:
+            tt = str(h.get("TrendTicker") or "").strip()
+            td = data.get(tt) if tt else None
+            src = td if td is not None and len(td) > 220 else d
+            label, color, what, line = holding_status(src)
+            if src is d and np.isfinite(line):
+                what += (f" It is under its short-term trend line ({_f(line)})." if c < line
+                         else f" A close below {_f(line)} would end the short-term uptrend.")
+        ch = _chg(d, 1)
+        ret = (c / cost - 1) * 100 if cost > 0 else np.nan
+        num = lambda x, nd=2: round(float(x), nd) if np.isfinite(x) else None
+        items.append(dict(t=t, name=name, cur=cur, price=num(c), chg=num(ch), ret=num(ret, 1), value=num(sh * c, 0),
+                          shares=num(sh, 4), cost=num(cost), status=label, color=color, what=_plain(what),
+                          date=pd.Timestamp(d.index[-1]).date().isoformat()))
+    port = dict(stamp, total_cad=round(tot) if cost_tot else None,
+                ret=round((tot / cost_tot - 1) * 100, 1) if cost_tot else None,
+                usdcad=round(usdcad, 4) if np.isfinite(usdcad) else None, items=items)
+    with open(os.path.join(outdir, "portfolio.json"), "w") as f:
+        json.dump(port, f)
+    if kind != "close":
+        return
+    order = {"BUY": 0, "EXTENDED": 1, "WATCH": 2, "HOLD": 3, "TAKE PROFIT": 4, "TRAIL": 5, "SELL": 6, "DROP": 7}
+    live = [r for r in rows if not r["Closed"] or r["StatusSince"] == asof]
+    live.sort(key=lambda r: (order.get(r["Status"], 9), region(r["Ticker"]) != "CA", -(_num(r.get("Score")) or 0)))
+    setups = []
+    for r in live[:40]:
+        label, color, _ = STATUS_INFO.get(r["Status"], (r["Status"], "#555", ""))
+        p = PROFILES.get(r["Ticker"]) or {}
+        sc = _num(r.get("Score"))
+        setups.append(dict(t=r["Ticker"], name=p.get("Name") or "", industry=p.get("Industry") or "", status=label,
+                           code=r["Status"], color=color, score=round(sc) if np.isfinite(sc) else None,
+                           note=_plain(r.get("Note"))))
+    rad = [dict(t=x["Ticker"], name=(PROFILES.get(x["Ticker"]) or {}).get("Name") or "", trigger=x.get("Trigger"),
+                away=x.get("DistPct")) for x in (radar or [])[:15]]
+    with open(os.path.join(outdir, "setups.json"), "w") as f:
+        json.dump(dict(stamp, items=setups, radar=rad, radar_total=len(radar or [])), f,
+                  default=lambda o: o.item() if hasattr(o, "item") else str(o))
 
 
 def _last_full_scan(outdir):
@@ -2751,7 +2821,7 @@ def live_brief_html(outdir, now):
         b = json.load(open(os.path.join(outdir, "live_brief.json")))
     except Exception:
         return ""
-    if b.get("date") != now.date().isoformat():
+    if b.get("date") != now.date().isoformat() or b.get("kind") == "close":
         return ""
 
     def pc(x):
@@ -3370,6 +3440,11 @@ def main():
             write_live_brief(a.outdir, data, tickers, ctx, len(found), len(radar), frac, raw)
         except Exception as e:
             print("Live brief failed:", e)
+        try:
+            usdcad = float(data["CAD=X"]["Close"].iloc[-1]) if "CAD=X" in data else np.nan
+            write_app_data(a.outdir, "live", data, holdings, prev, usdcad, asof)
+        except Exception as e:
+            print("App data failed:", e)
         return
     rows = update_tracker(rows, res, data, asof)
     pd.DataFrame(rows, columns=TRACK_COLS).to_csv(tracker_path, index=False)
@@ -3385,6 +3460,11 @@ def main():
     usdcad = float(data["CAD=X"]["Close"].iloc[-1]) if "CAD=X" in data else np.nan
     write_html(html_path, asof, rows, res, data, market_context(data), len(data), review, radar=radar,
                portfolio=portfolio_html(holdings, data, rows, usdcad))
+    try:                                   # phone app: portfolio, setups and the market at the close
+        write_app_data(a.outdir, "close", data, holdings, rows, usdcad, asof, radar)
+        write_live_brief(a.outdir, data, tickers, ctx, len(found), len(radar), 1.0, raw, kind="close", session=asof)
+    except Exception as e:
+        print("App data failed:", e)
 
     print(f"\n{len(res)} new setups (scanned {len(data)} tickers in {time.time() - t0:.0f}s), close of {asof}\n")
     live = [r for r in rows if not r["Closed"] or r["StatusSince"] == asof]

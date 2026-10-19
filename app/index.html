@@ -12,61 +12,83 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Scanner">
 <style>
-:root{--bg:#f4f6f9;--card:#fff;--ink:#14202e;--muted:#5b6b7d;--line:#dde3ea;--accent:#1d5fbf;--bar:#0f2a4a;--up:#16794a;--dn:#b42318}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e141b;--card:#17202a;--ink:#e6edf3;--muted:#9aa7b4;--line:#2a3542;--accent:#6aa5ff;--bar:#0b1d33;--up:#4ade80;--dn:#f87171}}
-:root[data-theme="dark"]{--bg:#0e141b;--card:#17202a;--ink:#e6edf3;--muted:#9aa7b4;--line:#2a3542;--accent:#6aa5ff;--bar:#0b1d33;--up:#4ade80;--dn:#f87171}
+:root{--bg:#f4f6f9;--card:#fff;--ink:#14202e;--muted:#5b6b7d;--line:#dde3ea;--accent:#1d5fbf;--bar:#0f2a4a;--up:#16794a;--dn:#b42318;--chip:#eef2f7}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e141b;--card:#17202a;--ink:#e6edf3;--muted:#9aa7b4;--line:#2a3542;--accent:#6aa5ff;--bar:#0b1d33;--up:#4ade80;--dn:#f87171;--chip:#22303e}}
+:root[data-theme="dark"]{--bg:#0e141b;--card:#17202a;--ink:#e6edf3;--muted:#9aa7b4;--line:#2a3542;--accent:#6aa5ff;--bar:#0b1d33;--up:#4ade80;--dn:#f87171;--chip:#22303e}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 header{background:var(--bar);color:#fff;padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;display:flex;align-items:center;gap:10px}
 header img{width:28px;height:28px;border-radius:6px}
 header h1{font-size:17px;margin:0;font-weight:650}
-header .who{margin-left:auto;font-size:12px;opacity:.8}
 .view{display:none;position:absolute;top:var(--top,52px);bottom:calc(60px + env(safe-area-inset-bottom));left:0;right:0;overflow:auto}
 .view.on{display:block}
 .view iframe{width:100%;height:100%;border:0;background:var(--bg)}
-.pad{padding:14px 16px;max-width:760px;margin:0 auto}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:0 0 12px}
-.card h2{font-size:15px;margin:0 0 6px}
+.pad{padding:14px 16px 24px;max-width:760px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 12px}
+.card h2{font-size:16px;margin:0}
+.when{display:inline-block;background:var(--chip);color:var(--muted);border-radius:8px;padding:3px 9px;font-size:13px;margin:6px 0 2px}
+.when.live{background:#e3f4ea;color:#16794a}
+@media (prefers-color-scheme:dark){.when.live{background:#163322;color:#4ade80}}
 .muted{color:var(--muted);font-size:13px}
 .up{color:var(--up);font-weight:650}.dn{color:var(--dn);font-weight:650}
-.links{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
-.links a,.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;border:0;border-radius:9px;padding:9px 13px;font:inherit;font-weight:600}
-.links a.alt{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+.row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-top:1px solid var(--line);gap:10px}
+.row .l{min-width:0}.row .r{text-align:right;white-space:nowrap}
+.tk{font-weight:700}.nm{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:56vw}
+.badge{display:inline-block;color:#fff;font-size:12px;font-weight:700;border-radius:7px;padding:2px 8px}
+.big{font-size:24px;font-weight:700}
+.hold{border-left:5px solid var(--c,#555)}
+.hold .top{display:flex;justify-content:space-between;gap:10px}
+.hold p{margin:8px 0}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-size:13px}
+.facts div{background:var(--chip);border-radius:8px;padding:6px 8px}.facts span{display:block;color:var(--muted);font-size:12px}
+details summary{list-style:none;cursor:pointer}details summary::-webkit-details-marker{display:none}
+details .note{font-size:14px;margin:0 0 8px;color:var(--ink)}
+.btn,.links a{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;border:0;border-radius:10px;padding:10px 14px;font:inherit;font-weight:600;cursor:pointer}
+.links{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.links a.alt{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+input{font:inherit;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);width:100%}
+ol{padding-left:20px;margin:6px 0}ol li{margin:4px 0;font-size:14px}
 nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom)}
 nav button{flex:1;background:none;border:0;color:var(--muted);font:600 12px system-ui,sans-serif;padding:8px 0 10px;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer}
-nav button svg{width:22px;height:22px}
-nav button.on{color:var(--accent)}
-.strip{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:14px}
-input{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);width:100%}
-#install{display:none}
+nav button svg{width:22px;height:22px}nav button.on{color:var(--accent)}
+.back{display:block;background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px;color:var(--accent);font-weight:600;text-decoration:none}
 </style>
 </head>
 <body>
-<header><img src="icon-192.png" alt=""><h1>Market Scanner</h1><span class="who" id="who"></span></header>
+<header><img src="icon-192.png" alt=""><h1>Market Scanner</h1></header>
 
-<section class="view" id="v-scan">
-  <div class="pad">
-    <div class="card" id="brief"><h2>Market right now</h2><p class="muted">Loading today's market brief...</p></div>
-    <div class="card"><h2>Reports</h2>
-      <div class="links"><a href="#" data-open="../index.html">Evening scan</a><a class="alt" href="#" data-open="../live.html">Live</a>
-      <a class="alt" href="#" data-open="../morning.html">Morning check</a><a class="alt" href="#" data-open="../backtest.html">Backtest</a></div>
-      <p class="muted">The evening scan is the full report after the close; the morning check refreshes the whole market about 10:15-11:00 am Toronto time.</p></div>
-    <div class="card"><h2>Look up a ticker</h2>
-      <form id="lkf" style="display:flex;gap:8px"><input id="lk" placeholder="SHOP.TO, NVDA, L.TO..." autocapitalize="characters" maxlength="15">
-      <button class="btn" type="submit">Analyze</button></form>
-      <p class="muted" id="lkst">Opens the analysis if one exists; otherwise starts a new one (about 3 minutes).</p>
-      <div id="tokbox" style="display:none;margin-top:8px">
-        <p class="muted"><b>One-time setup on this phone:</b> paste the GitHub key you use for the report page's Scan now button
-        (GitHub &rarr; Settings &rarr; Developer settings &rarr; Fine-grained tokens; the key needs Actions read and write on breakout-scanner only).
-        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Make a new key</a>.</p>
-        <input id="tok" type="password" placeholder="github_pat_..." autocomplete="off">
-        <div class="links"><a href="#" id="toksave">Save on this phone</a></div>
-      </div></div>
-    <button class="btn" id="install">Install on this phone</button>
+<!-- SCANNER -->
+<section class="view" id="v-scan"><div class="pad">
+  <div class="card" id="market"><h2>Market</h2><p class="muted">Loading...</p></div>
+  <div class="card" id="setups"><h2>Breakout setups</h2><p class="muted">Loading...</p></div>
+  <div class="card"><h2>Look up a stock</h2>
+    <form id="lkf" style="display:flex;gap:8px;margin-top:10px"><input id="lk" placeholder="e.g. SHOP.TO or NVDA" autocapitalize="characters" maxlength="15">
+    <button class="btn" type="submit">Analyze</button></form>
+    <p class="muted" id="lkst">Shows the company, its earnings and a breakout and long-term view.</p>
+    <div id="tokbox" style="display:none">
+      <p style="margin:8px 0 2px"><b>One-time setup on this phone</b> (about 2 minutes). New analyses run on your GitHub account, so the app needs a key:</p>
+      <ol>
+        <li>Tap <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">make a key on GitHub</a> and sign in.</li>
+        <li>Name: <b>scanner app</b>. Expiration: <b>1 year</b>.</li>
+        <li>Repository access: <b>Only select repositories</b> &rarr; <b>breakout-scanner</b>.</li>
+        <li>Permissions &rarr; Repository &rarr; <b>Actions</b> &rarr; <b>Read and write</b>.</li>
+        <li>Tap <b>Generate token</b>, copy it, come back and paste it here.</li>
+      </ol>
+      <input id="tok" type="password" placeholder="paste the key (starts with github_pat_)" autocomplete="off">
+      <div class="links"><a href="#" id="toksave">Save and analyze</a></div>
+    </div>
   </div>
-</section>
-<section class="view" id="v-report"><iframe id="frame" title="Report"></iframe></section>
-<section class="view" id="v-port"><iframe id="portframe" title="My portfolio"></iframe></section>
+  <div class="card"><h2>Full reports</h2>
+    <div class="links"><a href="#" data-open="../index.html">Evening report</a><a class="alt" href="#" data-open="../live.html">Live report</a></div>
+    <p class="muted">The evening report has every chart and detail from the last scan after the close.</p></div>
+</div></section>
+
+<!-- REPORT VIEWER -->
+<section class="view" id="v-report"><a href="#" class="back" id="back">&larr; Back</a><iframe id="frame" title="Report" style="height:calc(100% - 42px)"></iframe></section>
+
+<!-- PORTFOLIO -->
+<section class="view" id="v-port"><div class="pad" id="port"><p class="muted">Loading your portfolio...</p></div></section>
+
+<!-- ESG -->
 <section class="view" id="v-esg"><iframe id="esgframe" title="ESG scanner"></iframe></section>
 
 <nav>
@@ -77,97 +99,145 @@ input{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:9
 
 <script>
 (function () {
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const TZ = 'America/Toronto';
+  const todayISO = () => new Date().toLocaleDateString('en-CA', { timeZone: TZ });
+  const day = iso => { if (!iso) return ''; const d = new Date(iso + 'T12:00:00');
+    return iso === todayISO() ? 'today' : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); };
+  const clock = hm => { if (!hm) return ''; let [h, m] = hm.split(':').map(Number); const ap = h >= 12 ? 'pm' : 'am'; h = h % 12 || 12; return `${h}:${String(m).padStart(2, '0')} ${ap}`; };
+  const pct = (x, nd = 1) => { if (x == null) return '-'; const v = +x.toFixed(nd) || 0;
+    return v === 0 ? `<span>0.${'0'.repeat(nd)}%</span>` : `<span class="${v > 0 ? 'up' : 'dn'}">${v > 0 ? '+' : ''}${v.toFixed(nd)}%</span>`; };
+  const money = (x, cur) => x == null ? '-' : `${Math.round(x).toLocaleString('en-US')} ${cur || ''}`;
+  const get = u => fetch(u + '?t=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
+  // one "when" label for every card
+  const whenLabel = (kind, date, time) => kind === 'live'
+    ? (date === todayISO() ? `<span class="when live">Live &middot; ${clock(time)} today</span>` : `<span class="when">${clock(time)} on ${day(date)}</span>`)
+    : `<span class="when">At the close &middot; ${day(date)}</span>`;
+  const nextScan = () => {            // the evening scan runs weekdays 22:00 UTC (6 pm summer, 5 pm winter)
+    const n = new Date(); const t = new Date(n); t.setUTCHours(22, 0, 0, 0);
+    while (t <= n || t.getUTCDay() === 0 || t.getUTCDay() === 6) t.setUTCDate(t.getUTCDate() + 1);
+    const hm = t.toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).toLowerCase();
+    if (t.toLocaleDateString('en-CA', { timeZone: TZ }) === todayISO()) return 'tonight about ' + hm;
+    return t.toLocaleDateString('en-US', { timeZone: TZ, weekday: 'long' }) + ' about ' + hm;
+  };
+
+  // ---------- tabs
   const views = { scan: 'v-scan', report: 'v-report', port: 'v-port', esg: 'v-esg' };
-  const show = (k) => {
-    Object.values(views).forEach(id => document.getElementById(id).classList.remove('on'));
-    document.getElementById(views[k]).classList.add('on');
-    document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === k || (k === 'report' && b.dataset.tab === 'scan')));
-    if (k === 'esg') { const f = document.getElementById('esgframe'); if (!f.src) f.src = '../esg/index.html'; }
+  let lastTab = 'scan';
+  const show = k => {
+    Object.values(views).forEach(id => $(id).classList.remove('on'));
+    $(views[k]).classList.add('on');
+    if (k !== 'report') lastTab = k;
+    document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === (k === 'report' ? lastTab : k)));
+    if (k === 'esg' && !$('esgframe').src) $('esgframe').src = '../esg/index.html';
     if (k === 'port') loadPortfolio();
   };
-  const openReport = (url) => { document.getElementById('frame').src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(); show('report'); };
+  const openReport = u => { $('frame').src = u + (u.includes('?') ? '&' : '?') + 't=' + Date.now(); show('report'); };
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.tab));
-  document.querySelectorAll('[data-open]').forEach(a => a.onclick = (ev) => { ev.preventDefault(); openReport(a.dataset.open); });
-  // Ticker lookup: open the analysis if it exists, otherwise start a lookup run on GitHub and open it when ready
+  document.querySelectorAll('[data-open]').forEach(a => a.onclick = ev => { ev.preventDefault(); openReport(a.dataset.open); });
+  $('back').onclick = ev => { ev.preventDefault(); show(lastTab); };
+  document.documentElement.style.setProperty('--top', document.querySelector('header').offsetHeight + 'px');
+
+  // ---------- market
+  get('../live_brief.json').then(b => {
+    const el = $('market');
+    if (!b) { el.innerHTML = '<h2>Market</h2><p class="muted">No market data yet.</p>'; return; }
+    el.innerHTML = `<h2>Market</h2>${whenLabel(b.kind || 'live', b.date, b.time)}`
+      + b.indexes.map(i => `<div class="row"><span>${esc(i.name)}</span><span class="r">${pct(i.chg)}</span></div>`).join('')
+      + (b.regime ? `<p class="muted" style="margin:8px 0 0">Overall: <b>${esc(b.regime)}</b> for new breakout buys.</p>` : '');
+  });
+
+  // ---------- setups (from the evening scan)
+  get('../setups.json').then(s => {
+    const el = $('setups');
+    if (!s) { el.innerHTML = '<h2>Breakout setups</h2><p class="muted">Appears after the next evening scan (' + nextScan() + ').</p>'; return; }
+    const rows = (s.items || []).map(x => `<details><summary class="row"><span class="l"><span class="tk">${esc(x.t)}</span>
+        <div class="nm">${esc(x.name || x.industry || '')}</div></span>
+        <span class="r"><span class="badge" style="background:${esc(x.color)}">${esc(x.status)}</span>${x.score != null ? `<div class="muted">score ${x.score}</div>` : ''}</span></summary>
+        <p class="note">${esc(x.note)}${x.industry ? ' <span class="muted">(' + esc(x.industry) + ')</span>' : ''}</p></details>`).join('');
+    el.innerHTML = `<h2>Breakout setups</h2>${whenLabel('close', s.session)}
+      <p class="muted" style="margin:4px 0 6px">Next scan: ${nextScan()}. Tap a stock for what to do.</p>${rows || '<p class="muted">No setups in the last scan.</p>'}
+      ${s.radar_total ? `<p class="muted" style="margin-top:8px">${s.radar_total} more are close to breaking out ("on the radar"); see the evening report.</p>` : ''}`;
+  });
+
+  // ---------- portfolio
+  let portLoaded = 0;
+  const loadPortfolio = () => {
+    if (Date.now() - portLoaded < 60000) return;
+    portLoaded = Date.now();
+    get('../portfolio.json').then(p => {
+      const el = $('port');
+      if (!p) { el.innerHTML = '<div class="card"><p class="muted">Your portfolio appears after the next scan (' + nextScan() + ').</p></div>'; return; }
+      const [d, t] = (p.updated || '').split(' ');
+      const asof = p.kind === 'live' ? whenLabel('live', d, t) : whenLabel('close', p.session);
+      const head = `<div class="card"><h2>Your portfolio</h2>${asof}
+        ${p.total_cad != null ? `<div style="margin-top:8px"><span class="big">$${p.total_cad.toLocaleString('en-US')}</span> <span class="muted">CAD</span></div>
+        <div class="muted">${pct(p.ret)} since you bought${p.usdcad ? ` &middot; USD at ${p.usdcad}` : ''}</div>` : ''}
+        <p class="muted" style="margin:8px 0 0">Prices update with the morning check (about 10:15-11 am) and after the close (next: ${nextScan()}).</p></div>`;
+      const cards = p.items.map(h => h.price == null ? `<div class="card hold"><b>${esc(h.t)}</b> <span class="muted">${esc(h.name)}: no price data</span></div>` :
+        `<div class="card hold" style="--c:${esc(h.color)}"><div class="top"><div><span class="tk">${esc(h.name)}</span><div class="muted">${esc(h.t)}</div></div>
+          <div style="text-align:right"><b>${h.price.toFixed(2)}</b> <span class="muted">${esc(h.cur)}</span><div>${pct(h.chg, 2)} <span class="muted">${p.kind === 'live' ? 'today' : 'on the day'}</span></div></div></div>
+          <p><span class="badge" style="background:${esc(h.color)}">${esc(h.status)}</span> ${esc(h.what)}</p>
+          <div class="facts"><div><span>Value</span>${money(h.value, h.cur)}</div><div><span>Return</span>${pct(h.ret)}</div>
+          <div><span>Shares @ cost</span>${(+h.shares).toString()} @ ${h.cost != null ? h.cost.toFixed(2) : '-'}</div></div></div>`).join('');
+      el.innerHTML = head + cards + '<p class="muted">Trend signals from the scanner\'s rules, not advice.</p>';
+    });
+  };
+
+  // ---------- lookup
   const owner = location.hostname.split('.')[0];
   const repo = location.pathname.split('/').filter(Boolean)[0] || 'breakout-scanner';
   const api = `https://api.github.com/repos/${owner}/${repo}/actions`;
-  const st = document.getElementById('lkst');
+  const st = $('lkst');
   const getTok = () => { try { return localStorage.getItem('scanTok') || ''; } catch (e) { return ''; } };
-  const exists = async (u) => { try { const r = await fetch(u + '?t=' + Date.now(), { cache: 'no-store' }); return r.ok; } catch (e) { return false; } };
+  const head = async u => { try { const r = await fetch(u + '?t=' + Date.now(), { cache: 'no-store' }); return r.ok ? (r.headers.get('last-modified') || 'yes') : null; } catch (e) { return null; } };
   let pending = '';
-  document.getElementById('toksave').onclick = (ev) => { ev.preventDefault();
-    try { localStorage.setItem('scanTok', document.getElementById('tok').value.trim()); } catch (e) {}
-    document.getElementById('tokbox').style.display = 'none';
+  $('toksave').onclick = ev => { ev.preventDefault();
+    const v = $('tok').value.trim();
+    if (!v.startsWith('github_pat_') && !v.startsWith('ghp_')) { st.textContent = 'That does not look like a GitHub key (it starts with github_pat_).'; return; }
+    try { localStorage.setItem('scanTok', v); } catch (e) {}
+    $('tokbox').style.display = 'none';
     if (pending) startLookup(pending); };
-  const startLookup = async (k) => {
+  const startLookup = async k => {
     const t = getTok();
-    if (!t) { pending = k; document.getElementById('tokbox').style.display = 'block';
-      st.textContent = 'No analysis of ' + k + ' yet. To start one from the app, this phone needs your GitHub key once:'; return; }
+    if (!t) { pending = k; $('tokbox').style.display = 'block'; st.textContent = `${k} hasn't been analyzed yet.`; return; }
     const H = { 'Authorization': 'Bearer ' + t, 'Accept': 'application/vnd.github+json' };
     const started = Date.now();
-    st.textContent = 'Starting the analysis of ' + k + '...';
+    st.textContent = `Starting the analysis of ${k}...`;
     try {
-      const r = await fetch(`${api}/workflows/scan.yml/dispatches`, { method: 'POST', headers: H,
-        body: JSON.stringify({ ref: 'main', inputs: { mode: 'lookup', ticker: k } }) });
-      if (r.status !== 204) { if (r.status === 401 || r.status === 403) { try { localStorage.removeItem('scanTok'); } catch (e) {} }
-        throw new Error(r.status === 401 || r.status === 403 ? 'GitHub rejected the key - paste a new one' : 'GitHub said ' + r.status); }
+      const r = await fetch(`${api}/workflows/scan.yml/dispatches`, { method: 'POST', headers: H, body: JSON.stringify({ ref: 'main', inputs: { mode: 'lookup', ticker: k } }) });
+      if (r.status === 401 || r.status === 403) { try { localStorage.removeItem('scanTok'); } catch (e) {} pending = k; $('tokbox').style.display = 'block';
+        st.textContent = 'GitHub did not accept the saved key. Make a new one (steps below).'; return; }
+      if (r.status !== 204) throw new Error('GitHub said ' + r.status);
       for (let i = 0; i < 80; i++) {
         await new Promise(res => setTimeout(res, 15000));
         const mins = Math.round((Date.now() - started) / 60000);
         const j = await (await fetch(`${api}/runs?event=workflow_dispatch&per_page=5`, { headers: H })).json();
         const run = (j.workflow_runs || []).find(x => new Date(x.created_at) >= new Date(started - 60000));
-        if (!run || run.status !== 'completed') { st.textContent = `Analyzing ${k} (${mins} min${run && run.status === 'queued' ? ', waiting for GitHub' : ''})... you can leave this open.`; continue; }
-        if (run.conclusion !== 'success') { st.textContent = 'The analysis run ended with "' + run.conclusion + '".'; return; }
-        for (let w = 0; w < 16; w++) {               // the site takes a minute to publish
-          if (await exists('../lookup/' + k + '.html')) { st.textContent = 'Done.'; openReport('../lookup/' + k + '.html'); return; }
-          st.textContent = 'Publishing...'; await new Promise(res => setTimeout(res, 15000));
+        if (!run || run.status !== 'completed') { st.textContent = `Analyzing ${k}... ${mins} min (usually 3-4). You can keep using the app.`; continue; }
+        if (run.conclusion !== 'success') { st.textContent = `The analysis didn't finish (${run.conclusion}). Try again in a few minutes.`; return; }
+        for (let w = 0; w < 16; w++) {
+          if (await head('../lookup/' + k + '.html')) { st.textContent = `${k}: analysis ready.`; openReport('../lookup/' + k + '.html'); return; }
+          st.textContent = 'Almost ready, publishing...'; await new Promise(res => setTimeout(res, 15000));
         }
-        st.textContent = 'Finished, but the page is not published yet. Try again in a minute.'; return;
+        st.textContent = 'Finished; the page will be ready in a minute. Tap Analyze again.'; return;
       }
-    } catch (e) { st.textContent = 'Could not start: ' + e.message; }
+    } catch (e) { st.textContent = 'Could not start the analysis: ' + e.message; }
   };
-  document.getElementById('lkf').onsubmit = async (ev) => { ev.preventDefault();
-    const k = document.getElementById('lk').value.trim().toUpperCase().replace(/ +/g, '');
+  window.refreshLookup = k => startLookup(k);
+  $('lkf').onsubmit = async ev => { ev.preventDefault();
+    const k = $('lk').value.trim().toUpperCase().replace(/ +/g, '');
     if (!/^[A-Z0-9][A-Z0-9.=^-]{0,14}$/.test(k)) { st.textContent = 'Type a ticker, e.g. SHOP.TO or NVDA.'; return; }
     st.textContent = 'Checking...';
     for (const c of [k, k.includes('.') ? null : k + '.TO'].filter(Boolean)) {
-      if (await exists('../lookup/' + c + '.html')) { st.textContent = ''; openReport('../lookup/' + c + '.html'); return; }
+      const lm = await head('../lookup/' + c + '.html');
+      if (lm) { const d = lm !== 'yes' ? new Date(lm).toLocaleDateString('en-US', { timeZone: TZ, month: 'short', day: 'numeric' }) : '';
+        st.innerHTML = `Opened the analysis of ${esc(c)}${d ? ' from ' + d : ''}. <a href="#" onclick="refreshLookup('${esc(c)}');return false">Make a fresh one</a>`;
+        openReport('../lookup/' + c + '.html'); return; }
     }
     startLookup(k); };
-  document.documentElement.style.setProperty('--top', document.querySelector('header').offsetHeight + 'px');
 
-  // Market brief from the morning's full live scan
-  const fmt = x => `<span class="${x >= 0 ? 'up' : 'dn'}">${x >= 0 ? '+' : ''}${x.toFixed(1)}%</span>`;
-  fetch('../live_brief.json?t=' + Date.now()).then(r => r.ok ? r.json() : null).then(b => {
-    const el = document.getElementById('brief');
-    if (!b) { el.innerHTML = '<h2>Market right now</h2><p class="muted">No live brief yet today. Open the evening scan for the last close.</p>'; return; }
-    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Toronto' });
-    const stale = b.date !== today ? ` <b>(from ${b.date}, not today)</b>` : '';
-    el.innerHTML = `<h2>Market at ${b.time} ET${stale}</h2><div class="strip">${b.indexes.map(i => `<span>${i.name} ${fmt(i.chg)}</span>`).join('')}</div>`
-      + (b.regime ? `<p class="muted">Regime: <b>${b.regime}</b> &middot; ${b.breakouts} breakouts forming, ${b.radar} on the radar</p>` : '')
-      + (b.gainers && b.gainers.length ? `<p class="muted">Top gainers: ${b.gainers.slice(0, 3).map(m => m.t + ' ' + fmt(m.chg)).join(', ')}</p>` : '');
-  }).catch(() => {});
-
-  // Portfolio tab: the 'Your portfolio' section of the latest evening report, opened at that section
-  let portLoaded = 0;
-  window.loadPortfolio = () => {
-    const f = document.getElementById('portframe');
-    if (Date.now() - portLoaded < 5 * 60000) return;          // reload at most every 5 minutes
-    portLoaded = Date.now();
-    f.onload = () => { try {
-      const d = f.contentDocument;
-      const h = [...d.querySelectorAll('h2')].find(x => /your portfolio/i.test(x.textContent));
-      if (h) h.scrollIntoView();
-      else d.body.insertAdjacentHTML('afterbegin', '<p style="padding:12px;font:15px system-ui">No portfolio section in the latest report.</p>');
-    } catch (e) {} };
-    f.src = '../index.html?t=' + Date.now();
-  };
-
-  // Install prompt (Android / Chrome); iPhone: Share > Add to Home Screen
-  let deferred;
-  window.addEventListener('beforeinstallprompt', (ev) => { ev.preventDefault(); deferred = ev; document.getElementById('install').style.display = 'inline-block'; });
-  document.getElementById('install').onclick = () => deferred && deferred.prompt();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   show('scan');
 })();
