@@ -10,6 +10,7 @@ on:
     - cron: "15 14 * * 1-5"
     - cron: "15 15 * * 1-5"
     # Backtest: Saturdays 12:00 UTC.
+    # (Schedule re-registered 2026-10-19 after scheduled runs stopped firing; no change to times.)
     - cron: "0 12 * * 6"
   workflow_dispatch:      # start any mode by hand from the Actions tab
     inputs:
