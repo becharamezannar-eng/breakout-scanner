@@ -52,8 +52,16 @@ input{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:9
       <a class="alt" href="#" data-open="../morning.html">Morning check</a><a class="alt" href="#" data-open="../backtest.html">Backtest</a></div>
       <p class="muted">The evening scan is the full report after the close; the morning check refreshes the whole market about 10:15-11:00 am Toronto time.</p></div>
     <div class="card"><h2>Look up a ticker</h2>
-      <form id="lkf"><input id="lk" placeholder="SHOP.TO, NVDA, L.TO..." autocapitalize="characters" maxlength="15"></form>
-      <p class="muted">Opens the latest analysis. New lookups are started from the report page's search box.</p></div>
+      <form id="lkf" style="display:flex;gap:8px"><input id="lk" placeholder="SHOP.TO, NVDA, L.TO..." autocapitalize="characters" maxlength="15">
+      <button class="btn" type="submit">Analyze</button></form>
+      <p class="muted" id="lkst">Opens the analysis if one exists; otherwise starts a new one (about 3 minutes).</p>
+      <div id="tokbox" style="display:none;margin-top:8px">
+        <p class="muted"><b>One-time setup on this phone:</b> paste the GitHub key you use for the report page's Scan now button
+        (GitHub &rarr; Settings &rarr; Developer settings &rarr; Fine-grained tokens; the key needs Actions read and write on breakout-scanner only).
+        <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Make a new key</a>.</p>
+        <input id="tok" type="password" placeholder="github_pat_..." autocomplete="off">
+        <div class="links"><a href="#" id="toksave">Save on this phone</a></div>
+      </div></div>
     <button class="btn" id="install">Install on this phone</button>
   </div>
 </section>
@@ -80,9 +88,53 @@ input{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:9
   const openReport = (url) => { document.getElementById('frame').src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(); show('report'); };
   document.querySelectorAll('nav button').forEach(b => b.onclick = () => show(b.dataset.tab));
   document.querySelectorAll('[data-open]').forEach(a => a.onclick = (ev) => { ev.preventDefault(); openReport(a.dataset.open); });
-  document.getElementById('lkf').onsubmit = (ev) => { ev.preventDefault();
+  // Ticker lookup: open the analysis if it exists, otherwise start a lookup run on GitHub and open it when ready
+  const owner = location.hostname.split('.')[0];
+  const repo = location.pathname.split('/').filter(Boolean)[0] || 'breakout-scanner';
+  const api = `https://api.github.com/repos/${owner}/${repo}/actions`;
+  const st = document.getElementById('lkst');
+  const getTok = () => { try { return localStorage.getItem('scanTok') || ''; } catch (e) { return ''; } };
+  const exists = async (u) => { try { const r = await fetch(u + '?t=' + Date.now(), { cache: 'no-store' }); return r.ok; } catch (e) { return false; } };
+  let pending = '';
+  document.getElementById('toksave').onclick = (ev) => { ev.preventDefault();
+    try { localStorage.setItem('scanTok', document.getElementById('tok').value.trim()); } catch (e) {}
+    document.getElementById('tokbox').style.display = 'none';
+    if (pending) startLookup(pending); };
+  const startLookup = async (k) => {
+    const t = getTok();
+    if (!t) { pending = k; document.getElementById('tokbox').style.display = 'block';
+      st.textContent = 'No analysis of ' + k + ' yet. To start one from the app, this phone needs your GitHub key once:'; return; }
+    const H = { 'Authorization': 'Bearer ' + t, 'Accept': 'application/vnd.github+json' };
+    const started = Date.now();
+    st.textContent = 'Starting the analysis of ' + k + '...';
+    try {
+      const r = await fetch(`${api}/workflows/scan.yml/dispatches`, { method: 'POST', headers: H,
+        body: JSON.stringify({ ref: 'main', inputs: { mode: 'lookup', ticker: k } }) });
+      if (r.status !== 204) { if (r.status === 401 || r.status === 403) { try { localStorage.removeItem('scanTok'); } catch (e) {} }
+        throw new Error(r.status === 401 || r.status === 403 ? 'GitHub rejected the key - paste a new one' : 'GitHub said ' + r.status); }
+      for (let i = 0; i < 80; i++) {
+        await new Promise(res => setTimeout(res, 15000));
+        const mins = Math.round((Date.now() - started) / 60000);
+        const j = await (await fetch(`${api}/runs?event=workflow_dispatch&per_page=5`, { headers: H })).json();
+        const run = (j.workflow_runs || []).find(x => new Date(x.created_at) >= new Date(started - 60000));
+        if (!run || run.status !== 'completed') { st.textContent = `Analyzing ${k} (${mins} min${run && run.status === 'queued' ? ', waiting for GitHub' : ''})... you can leave this open.`; continue; }
+        if (run.conclusion !== 'success') { st.textContent = 'The analysis run ended with "' + run.conclusion + '".'; return; }
+        for (let w = 0; w < 16; w++) {               // the site takes a minute to publish
+          if (await exists('../lookup/' + k + '.html')) { st.textContent = 'Done.'; openReport('../lookup/' + k + '.html'); return; }
+          st.textContent = 'Publishing...'; await new Promise(res => setTimeout(res, 15000));
+        }
+        st.textContent = 'Finished, but the page is not published yet. Try again in a minute.'; return;
+      }
+    } catch (e) { st.textContent = 'Could not start: ' + e.message; }
+  };
+  document.getElementById('lkf').onsubmit = async (ev) => { ev.preventDefault();
     const k = document.getElementById('lk').value.trim().toUpperCase().replace(/ +/g, '');
-    if (/^[A-Z0-9][A-Z0-9.=^-]{0,14}$/.test(k)) openReport('../lookup/' + k + '.html'); };
+    if (!/^[A-Z0-9][A-Z0-9.=^-]{0,14}$/.test(k)) { st.textContent = 'Type a ticker, e.g. SHOP.TO or NVDA.'; return; }
+    st.textContent = 'Checking...';
+    for (const c of [k, k.includes('.') ? null : k + '.TO'].filter(Boolean)) {
+      if (await exists('../lookup/' + c + '.html')) { st.textContent = ''; openReport('../lookup/' + c + '.html'); return; }
+    }
+    startLookup(k); };
   document.documentElement.style.setProperty('--top', document.querySelector('header').offsetHeight + 'px');
 
   // Market brief from the morning's full live scan
