@@ -3266,6 +3266,7 @@ def main():
         try:
             if LIVE["on"]:
                 d = d[~d.index.duplicated(keep="last")].copy()     # Yahoo can send today's bar twice
+                d["Volume"] = d["Volume"].astype(float)           # whole-number volume can't take the projection
                 if len(d) and pd.Timestamp(d.index[-1]).date() == today:
                     d.iloc[-1, d.columns.get_loc("Volume")] = d["Volume"].iloc[-1] / frac
                 data[t] = prep(d)
