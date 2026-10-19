@@ -2727,7 +2727,8 @@ def write_live_brief(outdir, data, tickers, ctx, n_found, n_radar, frac, raw=Non
                  vix=vx, breadth_us=dict(adv=br_us["adv"], dec=br_us["dec"], a50=clean(br_us["a50"])),
                  breadth_ca=dict(adv=br_ca["adv"], dec=br_ca["dec"], a50=clean(br_ca["a50"])),
                  breakouts=n_found, radar=n_radar,
-                 coverage=dict(us=cover["US"], ca=cover["CA"], raw_today=raw_today), errors=errors)
+                 coverage=dict(us=cover["US"], ca=cover["CA"], raw_today=raw_today,
+                               prep_fail=LIVE.get("prep_fail", [0, ""])), errors=errors)
     with open(os.path.join(outdir, "live_brief.json"), "w") as f:
         json.dump(brief, f, default=lambda o: o.item() if hasattr(o, "item") else str(o))
     return brief
@@ -3261,16 +3262,24 @@ def main():
     frac = session_fraction()
     today = dt.datetime.now(ET).date()
     for t, d in raw.items():
+        d0 = d
         try:
             if LIVE["on"]:
-                d = d.copy()
+                d = d[~d.index.duplicated(keep="last")].copy()     # Yahoo can send today's bar twice
                 if len(d) and pd.Timestamp(d.index[-1]).date() == today:
-                    d.loc[d.index[-1], "Volume"] = d["Volume"].iloc[-1] / frac
+                    d.iloc[-1, d.columns.get_loc("Volume")] = d["Volume"].iloc[-1] / frac
                 data[t] = prep(d)
             else:
                 data[t] = prep(drop_live_bar(d))
-        except Exception:
-            pass
+        except Exception as e:
+            LIVE.setdefault("prep_fail", [0, ""])
+            LIVE["prep_fail"][0] += 1
+            LIVE["prep_fail"][1] = LIVE["prep_fail"][1] or f"{t}: {type(e).__name__} {str(e)[:100]}"
+            if LIVE["on"]:
+                try:
+                    data[t] = prep(drop_live_bar(d0))             # fall back to the last close for this one
+                except Exception:
+                    pass
 
     found, radar = [], []
     for t in tickers:
