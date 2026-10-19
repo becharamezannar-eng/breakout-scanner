@@ -3,21 +3,25 @@
 Modular add-on: it imports the main scanner's functions and never changes them, its files live in reports/esg/,
 and it runs as its own workflow step (continue-on-error), so a problem here cannot stop the evening scan.
 
-Screening framework (what "qualifies as ESG" means here):
-  * UN Global Compact - ten principles in four areas: human rights (1-2), labour (3-6), environment (7-9),
-    anti-corruption (10). A company involved in severe controversies (Sustainalytics controversy level 4-5) is
-    treated as a possible breach and excluded; this is how Sustainalytics' Global Standards Screening flags
-    UNGC non-compliance.
-  * UN-supported Principles for Responsible Investment (PRI), principle 1: ESG risk is part of the analysis -
-    only companies with Negligible, Low or Medium ESG risk (Sustainalytics risk score under 30) qualify.
-  * Global exclusion criteria (UN conventions on cluster munitions / landmines / chemical and biological weapons,
-    WHO Framework Convention on Tobacco Control, Paris Agreement via the EU Paris-Aligned Benchmark exclusions):
-    controversial weapons, civilian firearms, tobacco, thermal coal, oil & gas production, refining and pipelines.
-  * UN Sustainable Development Goals: each company's business is linked to the SDGs it serves (by industry).
+What "qualifies as ESG" means here
+----------------------------------
+A company qualifies when it is a member of an MSCI Choice ESG Screened index, published daily as the holdings of
+  * iShares ESG Advanced MSCI USA ETF (USXF)      - MSCI USA Choice ESG Screened Index
+  * iShares ESG Advanced MSCI Canada ETF (XCSR)   - MSCI Canada IMI Choice ESG Screened 10% Issuer Capped Index
+These indexes keep companies with favourable MSCI ESG ratings and screen out
+  * UN Global Compact violators (MSCI ESG Controversies) - the UNGC's ten principles on human rights (1-2),
+    labour (3-6), environment (7-9) and anti-corruption (10);
+  * controversial weapons (UN conventions on cluster munitions, landmines, chemical and biological weapons),
+    nuclear weapons, civilian firearms, conventional weapons;
+  * tobacco (WHO Framework Convention on Tobacco Control);
+  * thermal coal, oil sands and fossil-fuel ties, energy-sector companies (Paris Agreement goals);
+  * adult entertainment, alcohol, gambling, nuclear power, palm oil and other activities, with revenue limits.
+Using a published, UN-aligned index (rather than home-made scores) keeps the screen consistent with how global ESG
+funds and UN PRI signatories apply it. Each company is then linked to the UN Sustainable Development Goals its
+line of business serves.
 
-Data: ESG risk ratings by Morningstar Sustainalytics as published on Yahoo Finance; prices and the breakout
-logic are the main scanner's. Universe: S&P 500, Dow, S&P/TSX Composite and TSX 60 (the companies that carry
-ESG ratings; most Nasdaq Composite and Russell 2000 small caps are not rated).
+Why not ratings per company: Yahoo Finance removed its Sustainalytics ESG scores (Oct 2025), and the other
+company-level ESG sources need a paid account or API key.
 
   python esg_scanner.py --outdir reports            # daily ESG scan -> reports/esg/index.html
   python esg_scanner.py --outdir reports --lookup X # ESG brief + full analysis -> reports/esg/lookup/X.html
@@ -25,6 +29,7 @@ ESG ratings; most Nasdaq Composite and Russell 2000 small caps are not rated).
 import argparse
 import datetime as dt
 import html
+import io
 import json
 import os
 import re
@@ -38,32 +43,35 @@ import breakout_scanner as bs
 
 e = lambda s: html.escape(str(s if s is not None else ""))
 
-ESG_INDEXES = ["tsx", "tsx60", "sp500", "djia"]
-ESG_ETFS = [("ESGU", "iShares ESG Aware MSCI USA"), ("SUSA", "iShares MSCI USA ESG Select"),
-            ("XESG.TO", "iShares ESG Aware MSCI Canada")]
-RULES = dict(max_risk=30.0, leader_risk=20.0, max_controversy=3, leader_controversy=2,
-             max_age_days=30, max_fetch=900, pause=0.25, max_fail_streak=12)
-
-# product involvement flags reported with the rating
-EXCLUDE_FLAGS = {
-    "controversialWeapons": "Controversial weapons (UN conventions on cluster munitions, landmines, chemical and biological weapons)",
-    "smallArms": "Civilian firearms",
-    "tobacco": "Tobacco (WHO Framework Convention on Tobacco Control)",
-    "coal": "Thermal coal (Paris Agreement; EU Paris-Aligned Benchmark exclusion)",
+FUNDS = {
+    "US": dict(fund="USXF", index="MSCI USA Choice ESG Screened Index", name="iShares ESG Advanced MSCI USA ETF",
+               page="https://www.ishares.com/us/products/314365/ishares-esg-advanced-msci-usa-etf",
+               urls=["https://www.ishares.com/us/products/314365/ishares-esg-advanced-msci-usa-etf/1467271812596.ajax"
+                     "?fileType=csv&fileName=USXF_holdings&dataType=fund"]),
+    "CA": dict(fund="XCSR", index="MSCI Canada IMI Choice ESG Screened 10% Issuer Capped Index",
+               name="iShares ESG Advanced MSCI Canada Index ETF",
+               page="https://www.blackrock.com/ca/investors/en/products/313580/ishares-esg-advanced-msci-canada-index-etf",
+               urls=["https://www.blackrock.com/ca/investors/en/products/313580/ishares-esg-advanced-msci-canada-index-etf/"
+                     "1464253357814.ajax?fileType=csv&fileName=XCSR_holdings&dataType=fund",
+                     "https://www.blackrock.com/ca/investors/en/rbc/313580/fund/1586252180210.ajax"
+                     "?fileType=csv&fileName=XCSR_holdings&dataType=fund"]),
 }
-DISCLOSE_FLAGS = {"militaryContract": "military contracting", "nuclear": "nuclear power", "gambling": "gambling",
-                  "alcoholic": "alcohol", "adult": "adult entertainment", "palmOil": "palm oil",
-                  "pesticides": "pesticides", "gmo": "GMOs", "animalTesting": "animal testing",
-                  "furLeather": "fur and specialty leather"}
-# fossil-fuel business (EU Paris-Aligned Benchmark: oil & gas exploration, extraction, refining, distribution)
-EXCLUDE_INDUSTRY = ["oil & gas e&p", "oil & gas integrated", "oil & gas drilling", "oil & gas refining",
-                    "oil & gas midstream", "thermal coal", "coal", "tobacco", "oil & gas producers", "refiners & pipelines"]
+ESG_ETFS = [("USXF", "iShares ESG Advanced MSCI USA"), ("XCSR.TO", "iShares ESG Advanced MSCI Canada"),
+            ("ESGU", "iShares ESG Aware MSCI USA"), ("XESG.TO", "iShares ESG Aware MSCI Canada")]
+MEMBER_COLS = ["Ticker", "Name", "Sector", "Weight", "Fund", "Region", "AsOf"]
+MSCI_TOOL = "https://www.msci.com/our-solutions/esg-investing/esg-ratings-climate-search-tool"
+SCREENS = ("controversial and nuclear weapons, civilian firearms, tobacco, thermal coal, oil sands and other fossil-fuel "
+           "ties (energy sector excluded), plus adult entertainment, alcohol, gambling, conventional weapons, nuclear "
+           "power and palm oil, with revenue limits")
+FOSSIL = ["oil & gas", "coal", "uranium", "oil and gas"]
+WEAPONS = ["aerospace & defense", "tobacco", "gambling", "beverages - wineries", "beverages - brewers",
+           "beverages - distillers"]
 
-UNGC = [  # (principles, area, what it covers, which risk pillar evidences it)
-    ("1-2", "Human rights", "Support human rights; no complicity in abuses", "SocRisk"),
-    ("3-6", "Labour", "Freedom of association; no forced or child labour; no discrimination", "SocRisk"),
-    ("7-9", "Environment", "Precaution, environmental responsibility, clean technology", "EnvRisk"),
-    ("10", "Anti-corruption", "Work against corruption, extortion and bribery", "GovRisk"),
+UNGC = [  # (principles, area, what it covers)
+    ("1-2", "Human rights", "Support human rights; no complicity in abuses"),
+    ("3-6", "Labour", "Freedom of association; no forced or child labour; no discrimination"),
+    ("7-9", "Environment", "Precaution, environmental responsibility, clean technology"),
+    ("10", "Anti-corruption", "Work against corruption, extortion and bribery"),
 ]
 SDG = {3: "Good health", 2: "Zero hunger", 4: "Quality education", 6: "Clean water", 7: "Clean energy",
        8: "Decent work & growth", 9: "Industry, innovation & infrastructure", 11: "Sustainable cities",
@@ -71,7 +79,7 @@ SDG = {3: "Good health", 2: "Zero hunger", 4: "Quality education", 6: "Clean wat
 SDG_MAP = [  # industry keyword -> SDGs (business link, not a measured impact)
     (("solar", "renewable", "wind"), (7, 13)), (("water",), (6,)), (("waste", "pollution", "environmental"), (11, 12)),
     (("medical", "drug", "biotech", "health", "diagnostic", "pharma"), (3,)), (("education",), (4,)),
-    (("bank", "credit", "insurance", "capital markets", "asset management"), (8,)),
+    (("bank", "credit", "insurance", "capital markets", "asset management", "financ"), (8,)),
     (("railroad", "electrical equipment", "engineering", "construction", "infrastructure operations", "building"), (9, 11)),
     (("semiconductor", "software", "telecom", "communication", "information technology", "computer"), (9,)),
     (("farm", "agricultur", "grocery", "packaged food", "food"), (2,)),
@@ -79,115 +87,100 @@ SDG_MAP = [  # industry keyword -> SDGs (business link, not a measured impact)
     (("residential", "reit - healthcare"), (11,)), (("auto", "electric vehicle"), (9, 13)),
     (("copper", "lithium", "industrial metals", "aluminum"), (7, 9)), (("staffing", "employment"), (8,)),
 ]
-RATING_COLS = ["Ticker", "FetchedOn", "Status", "TotalRisk", "EnvRisk", "SocRisk", "GovRisk", "Controversy",
-               "Percentile", "PeerGroup", "RatingDate", "Flags"]
-
-
-def risk_band(x):
-    if not np.isfinite(x):
-        return "-"
-    return "Negligible" if x < 10 else "Low" if x < 20 else "Medium" if x < 30 else "High" if x < 40 else "Severe"
-
-
-def _num(x):
-    try:
-        if isinstance(x, dict):
-            x = x.get("raw")
-        v = float(x)
-        return v if np.isfinite(v) else np.nan
-    except (TypeError, ValueError):
-        return np.nan
 
 
 # --------------------------------------------------------------------------
-# Ratings (Sustainalytics via Yahoo), cached for 30 days in reports/esg/ratings.csv
+# Index membership (daily holdings files), cached in reports/esg/members.csv
 # --------------------------------------------------------------------------
-def fetch_rating(t):
-    """Returns (status, dict). status: ok | none (company not rated) | error (blocked / network)."""
-    import yfinance as yf
-    try:
-        df = yf.Ticker(t).sustainability
-    except Exception as ex:
-        msg = str(ex).lower()
-        if "not found" in msg or "no fundamentals" in msg or "404" in msg:
-            return "none", {}
-        return "error", {"err": str(ex)[:120]}
-    if df is None or not len(df):
-        return "none", {}
-    s = df.iloc[:, 0].to_dict() if isinstance(df, pd.DataFrame) else dict(df)
-    tot = _num(s.get("totalEsg"))
-    if not np.isfinite(tot):
-        return "none", {}
-    flags = sorted(k for k in list(EXCLUDE_FLAGS) + list(DISCLOSE_FLAGS) if s.get(k) is True)
-    ry, rm = s.get("ratingYear"), s.get("ratingMonth")
-    return "ok", dict(TotalRisk=round(tot, 1), EnvRisk=_num(s.get("environmentScore")),
-                      SocRisk=_num(s.get("socialScore")), GovRisk=_num(s.get("governanceScore")),
-                      Controversy=_num(s.get("highestControversy")), Percentile=_num(s.get("percentile")),
-                      PeerGroup=str(s.get("peerGroup") or ""),
-                      RatingDate=f"{int(ry)}-{int(rm):02d}" if ry and rm else "", Flags=";".join(flags))
+def parse_holdings(text):
+    """iShares / BlackRock holdings CSV: a few metadata lines, then a table starting with 'Ticker,'."""
+    lines = text.splitlines()
+    start = next((i for i, l in enumerate(lines) if l.lstrip('﻿"').startswith("Ticker")), None)
+    if start is None:
+        raise ValueError("no holdings table")
+    asof = ""
+    for l in lines[:start]:
+        if "as of" in l.lower():
+            m = re.search(r'"?([A-Z][a-z]{2}\.? \d{1,2}, \d{4})"?', l)
+            if m:
+                try:
+                    asof = pd.Timestamp(m.group(1).replace(".", "")).date().isoformat()
+                except Exception:
+                    pass
+            break
+    df = pd.read_csv(io.StringIO("\n".join(lines[start:])), on_bad_lines="skip")
+    df.columns = [str(c).strip() for c in df.columns]
+    if "Asset Class" in df.columns:
+        df = df[df["Asset Class"].astype(str).str.strip() == "Equity"]
+    df = df[df["Ticker"].notna() & (df["Ticker"].astype(str).str.strip() != "-")]
+    w = "Weight (%)" if "Weight (%)" in df.columns else next((c for c in df.columns if c.startswith("Weight")), None)
+    out = pd.DataFrame(dict(Ticker=df["Ticker"].astype(str).str.strip(), Name=df.get("Name", ""),
+                            Sector=df.get("Sector", ""),
+                            Weight=pd.to_numeric(df[w].astype(str).str.replace(",", ""), errors="coerce") if w else np.nan))
+    return out, asof
 
 
-def load_ratings(path):
-    if os.path.exists(path):
-        try:
-            df = pd.read_csv(path, dtype={"Ticker": str, "PeerGroup": str, "Flags": str, "RatingDate": str, "Status": str})
-            return {r["Ticker"]: {k: (None if (isinstance(v, float) and np.isnan(v) and k in ("Flags", "PeerGroup", "RatingDate"))
-                                      else v) for k, v in r.items()} for r in df.to_dict("records")}
-        except Exception:
-            pass
-    return {}
+def _norm(t):
+    return re.sub(r"[^A-Z0-9]", "", str(t).upper().replace(".TO", ""))
 
 
-def save_ratings(path, ratings):
-    pd.DataFrame(list(ratings.values()), columns=RATING_COLS).to_csv(path, index=False)
+def map_ticker(raw, reg, known):
+    """Holdings tickers -> Yahoo symbols (BRKB -> BRK-B, RCI.B -> RCI-B.TO)."""
+    n = _norm(raw)
+    if (n, reg) in known:
+        return known[(n, reg)]
+    t = str(raw).strip().upper().replace(".", "-").replace(" ", "-")
+    return t + ".TO" if reg == "CA" else t
 
 
-def refresh_ratings(tickers, path, diag):
-    ratings = load_ratings(path)
-    today = dt.date.today()
+def fetch_members(esg_dir, diag, universe=()):
+    import requests
+    known = {(_norm(t), bs.region(t)): t for t in universe}
+    path = os.path.join(esg_dir, "members.csv")
+    old = pd.read_csv(path) if os.path.exists(path) else pd.DataFrame(columns=MEMBER_COLS)
+    frames = []
+    for reg, f in FUNDS.items():
+        got = None
+        for url in f["urls"]:
+            try:
+                r = requests.get(url, headers=bs._WEB, timeout=30)
+                if r.ok and "Ticker" in r.text[:5000]:
+                    got = parse_holdings(r.text)
+                    break
+            except Exception as ex:
+                diag.append(f"ESG list {f['fund']}: {type(ex).__name__}")
+        if got is not None and len(got[0]) >= 30:
+            df, asof = got
+            df["Ticker"] = [map_ticker(t, reg, known) for t in df["Ticker"]]
+            df["Fund"], df["Region"], df["AsOf"] = f["fund"], reg, asof or dt.date.today().isoformat()
+            frames.append(df[MEMBER_COLS])
+            diag.append(f"ESG list {f['fund']}: {len(df)} companies (holdings of {df['AsOf'].iloc[0]})")
+        else:
+            prev = old[old["Region"] == reg] if len(old) else old
+            if len(prev):
+                frames.append(prev[MEMBER_COLS])
+                diag.append(f"ESG list {f['fund']}: download failed, using the saved list from {prev['AsOf'].iloc[0]}")
+            else:
+                diag.append(f"ESG list {f['fund']}: download failed and no saved list")
+    mem = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=MEMBER_COLS)
+    mem = mem.drop_duplicates("Ticker")
+    if len(mem):
+        mem.to_csv(path, index=False)
+    return {r["Ticker"]: r for r in mem.to_dict("records")}
 
-    def stale(t):
-        r = ratings.get(t)
-        if not r or r.get("Status") == "error":
-            return True
-        try:
-            return (today - dt.date.fromisoformat(str(r["FetchedOn"]))).days >= RULES["max_age_days"]
-        except ValueError:
-            return True
-    todo = sorted([t for t in tickers if stale(t)],
-                  key=lambda t: (ratings.get(t) is not None, bs.region(t) != "CA", t))[:RULES["max_fetch"]]
-    got = none = err = streak = 0
-    for i, t in enumerate(todo):
-        status, d = fetch_rating(t)
-        if status == "error":
-            err += 1
-            streak += 1
-            if t not in ratings:
-                ratings[t] = dict(Ticker=t, FetchedOn=today.isoformat(), Status="error")
-            if streak >= RULES["max_fail_streak"]:
-                diag.append(f"ESG ratings: Yahoo stopped answering after {i + 1} requests ({d.get('err', '')}); "
-                            "the rest are tried on the next run")
-                break
-            time.sleep(2)
-            continue
-        streak = 0
-        got += status == "ok"
-        none += status == "none"
-        ratings[t] = dict(Ticker=t, FetchedOn=today.isoformat(), Status=status, **d)
-        time.sleep(RULES["pause"])
-        if i % 100 == 0:
-            print(f"  ESG ratings {i}/{len(todo)}", flush=True)
-    save_ratings(path, ratings)
-    diag.append(f"ESG ratings: refreshed {len(todo)} (rated {got}, not rated {none}, errors {err}); "
-                f"{sum(1 for t in tickers if (ratings.get(t) or {}).get('Status') == 'ok')}/{len(tickers)} companies have a rating")
-    return ratings
+
+def load_members(esg_dir):
+    path = os.path.join(esg_dir, "members.csv")
+    if not os.path.exists(path):
+        return {}
+    return {r["Ticker"]: r for r in pd.read_csv(path).to_dict("records")}
 
 
 # --------------------------------------------------------------------------
-# Assessment
+# Assessment and the per-company ESG brief
 # --------------------------------------------------------------------------
-def sdgs_for(industry, peer):
-    txt = f"{industry} {peer}".lower()
+def sdgs_for(industry, sector=""):
+    txt = f"{industry} {sector}".lower()
     out = []
     for keys, goals in SDG_MAP:
         if any(k in txt for k in keys):
@@ -195,86 +188,71 @@ def sdgs_for(industry, peer):
     return out
 
 
-def assess(t, rating):
+def assess(t, member, lists_ok=True, is_fund=False):
     prof = bs.PROFILES.get(t, {})
-    industry, peer = str(prof.get("Industry") or ""), str((rating or {}).get("PeerGroup") or "")
-    if not rating or rating.get("Status") != "ok":
-        return dict(Qualified=False, Grade="No rating", Reasons=["No ESG risk rating is published for this company, "
-                                                                 "so it cannot be screened."], Fails=[], SDGs=[])
-    tot, cont = _num(rating.get("TotalRisk")), _num(rating.get("Controversy"))
-    flags = [f for f in str(rating.get("Flags") or "").split(";") if f]
-    fails, passes = [], []
-    if np.isfinite(tot) and tot < RULES["max_risk"]:
-        passes.append(f"ESG risk is {risk_band(tot)} ({tot:.1f}; under 30 qualifies) - meets the PRI test that ESG risk "
-                      "is manageable.")
-    else:
-        fails.append(f"ESG risk is {risk_band(tot)} ({tot:.1f}); 30 or more does not qualify.")
-    if np.isfinite(cont) and cont <= RULES["max_controversy"]:
-        passes.append(f"Highest controversy level {cont:.0f} of 5 - no severe incidents, so no flagged breach of the "
-                      "UN Global Compact.")
-    elif np.isfinite(cont):
-        fails.append(f"Controversy level {cont:.0f} of 5 - severe incidents of the kind that put companies on UN Global "
-                     "Compact watch or non-compliant lists.")
-    else:
-        passes.append("No controversy level reported.")
-    hit = [EXCLUDE_FLAGS[f] for f in flags if f in EXCLUDE_FLAGS]
-    ind_hit = [k for k in EXCLUDE_INDUSTRY if k in f"{industry} {peer}".lower()]
-    if hit:
-        fails.append("Excluded business involvement: " + "; ".join(hit) + ".")
-    if ind_hit:
-        fails.append(f"Fossil-fuel or tobacco business ({industry or peer}) - excluded under the Paris-Aligned "
-                     "Benchmark criteria.")
-    if not hit and not ind_hit:
-        passes.append("No involvement in excluded businesses (controversial weapons, civilian firearms, tobacco, thermal "
-                      "coal, oil & gas).")
-    disc = [DISCLOSE_FLAGS[f] for f in flags if f in DISCLOSE_FLAGS]
-    if disc:
-        passes.append("Disclosed involvement (allowed, but worth knowing): " + ", ".join(disc) + ".")
-    q = not fails
-    grade = ("ESG leader" if q and tot < RULES["leader_risk"] and (not np.isfinite(cont) or cont <= RULES["leader_controversy"])
-             else "ESG qualified" if q else "Not qualified")
-    return dict(Qualified=q, Grade=grade, Reasons=passes, Fails=fails, SDGs=sdgs_for(industry, peer))
+    industry, sector = str(prof.get("Industry") or ""), str(prof.get("Sector") or (member or {}).get("Sector") or "")
+    sd = sdgs_for(industry, sector)
+    if member:
+        f = FUNDS[member["Region"]]
+        w = member.get("Weight")
+        wt = f" at {float(w):.2f}% of the fund" if w is not None and np.isfinite(float(w)) else ""
+        return dict(Qualified=True, Grade="ESG qualified", SDGs=sd, Reasons=[
+            f"Member of the {f['index']} (held by iShares {f['fund']}{wt}; holdings of {member.get('AsOf') or '-'}).",
+            "The index keeps companies with favourable MSCI ESG ratings and removes UN Global Compact violators, so "
+            "it is not flagged for a breach of the UNGC principles.",
+            f"It passed the index's business screens: {SCREENS}."], Fails=[])
+    if is_fund:
+        return dict(Qualified=False, Grade="Not screened", SDGs=[], Fails=[], Reasons=[
+            "This is a fund, not a company: the ESG screens apply to the companies it holds. Check the fund's own "
+            "ESG fund rating on its provider's page."])
+    if not lists_ok:
+        return dict(Qualified=False, Grade="Unknown", SDGs=sd, Fails=[], Reasons=[
+            "The ESG index lists could not be loaded, so this company could not be screened."])
+    low = f"{industry} {sector}".lower()
+    why = ("its fossil-fuel business: the index excludes the energy sector and companies tied to oil, gas or coal"
+           if any(k in low for k in FOSSIL) or sector.lower() == "energy" else
+           "its line of business: weapons, tobacco, alcohol and gambling are screened out" if any(k in low for k in WEAPONS)
+           else "a lower MSCI ESG rating, a serious controversy or a screened business activity; or it is outside "
+                "the index's universe (smaller companies, listings outside the US and Canada)")
+    return dict(Qualified=False, Grade="Not qualified", SDGs=sd, Reasons=[], Fails=[
+        f"Not a member of the MSCI Choice ESG Screened indexes. Most likely reason: {why}.",
+        "Check the company's MSCI ESG rating and controversy flags in MSCI's free search tool (link below)."])
 
 
-GRADE_COLOR = {"ESG leader": "#16794a", "ESG qualified": "#1d5fbf", "Not qualified": "#b42318", "No rating": "#6b6b6b"}
+GRADE_COLOR = {"ESG qualified": "#16794a", "Not qualified": "#b42318", "Unknown": "#6b6b6b", "Not screened": "#6b6b6b"}
 
 
-def brief_html(t, rating, a, open_=False):
-    """The per-company ESG brief: why it qualifies, which UN criteria, sustainability metrics."""
+def brief_html(t, member, a, open_=False):
+    """Why it qualifies, which UN criteria it meets, and the sustainability facts available for it."""
     col = GRADE_COLOR.get(a["Grade"], "#555")
-    r = rating or {}
     lines = "".join(f"<li>&#10003; {e(x)}</li>" for x in a["Reasons"]) + "".join(f"<li>&#10007; {e(x)}</li>" for x in a["Fails"])
-    cont = _num(r.get("Controversy"))
-    rows = ""
-    for pr, area, what, key in UNGC:
-        v = _num(r.get(key))
-        ok = np.isfinite(cont) and cont <= RULES["max_controversy"] if r.get("Status") == "ok" else None
-        if key == "EnvRisk" and any(k in f"{bs.PROFILES.get(t, {}).get('Industry', '')} {r.get('PeerGroup', '')}".lower()
-                                    for k in EXCLUDE_INDUSTRY):
-            ok = False
-        res = "-" if ok is None else ("Meets" if ok else "Does not meet")
-        rows += (f"<tr><td>{pr}</td><td><b>{area}</b><br><small>{what}</small></td>"
-                 f"<td><b class='{'up' if ok else 'dn' if ok is False else ''}'>{res}</b><br>"
-                 f"<small>{'risk ' + format(v, '.1f') if np.isfinite(v) else 'pillar score n/a'}</small></td></tr>")
+    q = a["Qualified"]
+    rows = "".join(
+        f"<tr><td>{pr}</td><td><b>{area}</b><br><small>{what}</small></td>"
+        f"<td><b class='{'up' if q else 'dn' if a['Grade'] == 'Not qualified' else ''}'>"
+        f"{'Meets' if q else 'Not shown' if a['Grade'] == 'Not qualified' else '-'}</b><br>"
+        f"<small>{'not flagged by the UNGC-violator screen' if q else 'not in a screened index'}</small></td></tr>"
+        for pr, area, what in UNGC)
     sdg = " ".join(f'<span class="sdg">SDG {g} &middot; {SDG[g]}</span>' for g in a["SDGs"]) or \
         '<span class="hint">No direct SDG link from its line of business.</span>'
-    tot = _num(r.get("TotalRisk"))
-    pct = _num(r.get("Percentile"))
+    prof = bs.PROFILES.get(t, {})
+    m = member or {}
+    w = m.get("Weight")
     facts = "".join(f"<div><span>{k}</span><b>{v}</b></div>" for k, v in [
-        ("ESG risk score", f"{tot:.1f} ({risk_band(tot)})" if np.isfinite(tot) else "-"),
-        ("Environment / Social / Governance risk",
-         " / ".join(f"{_num(r.get(k)):.1f}" if np.isfinite(_num(r.get(k))) else "-" for k in ("EnvRisk", "SocRisk", "GovRisk"))),
-        ("Peer percentile (lower = less risk)", f"{pct:.0f}th" if np.isfinite(pct) else "-"),
-        ("Peer group", e(r.get("PeerGroup") or "-")), ("Highest controversy", f"{cont:.0f} of 5" if np.isfinite(cont) else "-"),
-        ("Rating date", e(r.get("RatingDate") or "-"))])
+        ("ESG index", e(FUNDS[m["Region"]]["index"]) if m else "None"),
+        ("Weight in the ESG fund", f"{float(w):.2f}%" if m and w is not None and np.isfinite(float(w)) else "-"),
+        ("Sector", e(prof.get("Sector") or m.get("Sector") or "-")), ("Industry", e(prof.get("Industry") or "-")),
+        ("UNGC violator screen", "Passed" if q else "-"), ("Fossil-fuel / weapons / tobacco screens", "Passed" if q else "-")])
+    src = (f'<a href="{FUNDS[m["Region"]]["page"]}" target="_blank" rel="noopener">{FUNDS[m["Region"]]["fund"]} holdings and '
+           f'screens</a> &middot; ' if m else "")
     return (f'<details class="esg"{" open" if open_ else ""}><summary><span class="eg" style="background:{col}">{a["Grade"]}</span> '
-            f'ESG brief: why it qualifies</summary><ul class="ck">{lines}</ul>'
+            f'ESG brief: why it {"qualifies" if q else "does not qualify"}</summary><ul class="ck">{lines}</ul>'
             f'<div class="wrap"><table class="ungc"><tr><th>UNGC</th><th>Area</th><th>Result</th></tr>{rows}</table></div>'
             f'<p style="margin:8px 0 4px"><b>UN Sustainable Development Goals</b> (by line of business)</p><p>{sdg}</p>'
             f'<div class="facts">{facts}</div>'
-            f'<p class="hint">ESG risk ratings: Morningstar Sustainalytics via Yahoo Finance. UNGC results use the controversy '
-            f'screen (levels 4-5 = severe); pillar risk scores are shown as evidence. Ratings are third-party opinions, not '
-            f'a certification.</p></details>')
+            f'<p class="hint">Sources: {src}<a href="{MSCI_TOOL}" target="_blank" rel="noopener">MSCI ESG rating for this '
+            f'company</a> (free search). Index membership is MSCI\'s screen, not a certification; company-level ESG scores need '
+            f'a paid data source.</p></details>')
 
 
 ESG_CSS = """
@@ -308,7 +286,7 @@ def _esg_page_chrome(page, depth=1):
     up = "../" * depth
     if depth == 2:                     # a lookup page: its own links point at the main site
         page = page.replace('href="../', 'href="../../')
-    page = re.sub(r'<form class="lookbar".*?</form>', ESG_SEARCH.replace("\\", "\\\\"), page, count=1, flags=re.S)
+    page = re.sub(r'<form class="lookbar".*?</form>', lambda m: ESG_SEARCH, page, count=1, flags=re.S)
     for name in ("index.html", "live.html", "morning.html", "backtest.html", "archive.html"):
         page = page.replace(f'href="{name}"', f'href="{up}{name}"')
     nav = (f'<p class="links"><b>ESG scanner</b> &middot; <a href="{up}index.html">Main scanner</a> &middot; '
@@ -320,19 +298,16 @@ def _esg_page_chrome(page, depth=1):
 # --------------------------------------------------------------------------
 # Daily ESG scan
 # --------------------------------------------------------------------------
-def summary_html(asof, qual, ratings, data, universe, res, radar, diag):
-    n_rated = sum(1 for t in universe if (ratings.get(t) or {}).get("Status") == "ok")
-    lead = [t for t, a in qual.items() if a["Grade"] == "ESG leader"]
+def summary_html(asof, qual, members, data, res, radar, diag):
     ca = [t for t in qual if bs.region(t) == "CA"]
+
+    def fmt(x):
+        return f'<b class="{"up" if x >= 0 else "dn"}">{x:+.1f}%</b>' if np.isfinite(x) else "-"
 
     def avg1(ts):
         xs = [bs._chg(data[t], 1) for t in ts if t in data and len(data[t]) > 2]
         xs = [x for x in xs if np.isfinite(x)]
         return np.mean(xs) if xs else np.nan
-    q1, all1 = avg1(list(qual)), avg1(universe)
-
-    def fmt(x):
-        return f'<b class="{"up" if x >= 0 else "dn"}">{x:+.1f}%</b>' if np.isfinite(x) else "-"
     etf_rows = ""
     for t, n in ESG_ETFS + [("SPY", "S&P 500 (SPY)"), ("XIU.TO", "S&P/TSX 60 (XIU)")]:
         d = data.get(t)
@@ -343,57 +318,53 @@ def summary_html(asof, qual, ratings, data, universe, res, radar, diag):
     movers = sorted(((bs._chg(data[t], 1), t) for t in qual if t in data and len(data[t]) > 2), key=lambda z: z[0])
     movers = [m for m in movers if np.isfinite(m[0])]
     mv = lambda lst: ", ".join(f"{t} {fmt(x)}" for x, t in lst) or "-"
-    best_sec = {}
+    secs = {}
     for t in qual:
-        s = bs.PROFILES.get(t, {}).get("Sector") or "Other"
-        best_sec[s] = best_sec.get(s, 0) + 1
-    secs = ", ".join(f"{k} {v}" for k, v in sorted(best_sec.items(), key=lambda z: -z[1])[:6])
+        s = str(members[t].get("Sector") or bs.PROFILES.get(t, {}).get("Sector") or "Other")
+        secs[s] = secs.get(s, 0) + 1
+    sec_txt = ", ".join(f"{k} {v}" for k, v in sorted(secs.items(), key=lambda z: -z[1])[:7])
     nb = len(res)
     gate = int(res["Gate"].sum()) if nb and "Gate" in res else 0
+    us_avg = avg1([t for t in qual if bs.region(t) == "US"])
+    ca_avg = avg1(ca)
     return f"""<section class="review esgsum"><h2>ESG daily summary &middot; close of {pd.Timestamp(asof):%a %b %d}</h2>
-<p><b>{len(qual)}</b> of {n_rated} rated companies qualify ({len(lead)} ESG leaders; {len(ca)} Canadian), out of
-{len(universe)} in the S&P 500, Dow, S&P/TSX Composite and TSX 60.</p>
-<p>ESG breakouts today: <b>{nb}</b> ({gate} pass the Buy gate); on the ESG radar: <b>{len(radar)}</b>.</p>
-<p>Average move today: qualified ESG companies {fmt(q1)} vs all companies {fmt(all1)}.</p>
+<p><b>{len(qual)}</b> companies qualify ({len(qual) - len(ca)} US in the MSCI USA Choice ESG Screened Index, {len(ca)} Canadian in
+the MSCI Canada Choice ESG Screened Index) with enough trading volume to scan.</p>
+<p>ESG breakouts: <b>{nb}</b> ({gate} pass the Buy gate); on the ESG radar: <b>{len(radar)}</b>.</p>
+<p>Average move of the qualified companies on the day: US {fmt(us_avg)}, Canada {fmt(ca_avg)}.</p>
 <p>Biggest ESG gainers: {mv([m for m in movers[::-1] if m[0] > 0][:5])}<br>Biggest ESG decliners: {mv([m for m in movers if m[0] < 0][:5])}</p>
-<p>Qualified companies by sector: {e(secs)}</p>
+<p>Qualified companies by sector: {e(sec_txt)}</p>
 <div class="wrap"><table class="mr"><tr><th class="tk">ESG funds vs the market</th><th>Last</th><th>1 day</th><th>1 month</th><th>YTD</th></tr>{etf_rows}</table></div>
 <details><summary>How companies qualify (UN standards)</summary><ul class="hint">
-<li><b>UN Global Compact</b> (human rights, labour, environment, anti-corruption): no severe controversies (Sustainalytics level 4-5),
-the screen used to flag UNGC breaches.</li>
-<li><b>UN Principles for Responsible Investment</b>: ESG risk is part of the analysis; only Negligible, Low or Medium ESG risk
-(score under 30) qualifies. Under 20 with controversies at level 2 or lower = ESG leader.</li>
-<li><b>Global exclusions</b>: controversial weapons (UN conventions), civilian firearms, tobacco (WHO FCTC), thermal coal and
-oil &amp; gas production, refining and pipelines (EU Paris-Aligned Benchmark rules).</li>
+<li><b>UN Global Compact</b> (human rights, labour, environment, anti-corruption): the indexes remove companies MSCI flags as UNGC violators.</li>
+<li><b>Global exclusions</b>: {SCREENS}.</li>
+<li><b>ESG quality</b>: only companies with favourable MSCI ESG ratings stay in the index (the screen UN PRI signatory funds use).</li>
 <li><b>UN SDGs</b>: each company's line of business is linked to the goals it serves.</li>
 <li>Breakouts, radar, scores, stops and targets use exactly the same rules as the main scanner.</li>
-<li>Ratings are refreshed every 30 days. {' '.join(e(x) for x in diag if x.startswith('ESG ratings'))}</li></ul></details>
+<li>Lists: daily holdings of iShares USXF and XCSR. {' '.join(e(x) for x in diag if x.startswith('ESG list'))}</li></ul></details>
 </section>"""
 
 
-def list_html(qual, ratings, data):
+def list_html(qual, members, data):
     rows = ""
-    order = sorted(qual, key=lambda t: (bs.region(t) != "CA", qual[t]["Grade"] != "ESG leader",
-                                        _num(ratings[t].get("TotalRisk"))))
+    order = sorted(qual, key=lambda t: (bs.region(t) != "CA", -float(members[t].get("Weight") or 0)))
     for t in order:
-        a, r, d = qual[t], ratings[t], data.get(t)
-        name = bs.PROFILES.get(t, {}).get("Name") or ""
+        m, d = members[t], data.get(t)
+        name = bs.PROFILES.get(t, {}).get("Name") or str(m.get("Name") or "").title()
         ch = bs._chg(d, 1) if d is not None and len(d) > 2 else np.nan
         trend = ""
         if d is not None and len(d) > 200 and pd.notna(d["SMA200"].iloc[-1]):
             c, s50, s200 = d["Close"].iloc[-1], d["SMA50"].iloc[-1], d["SMA200"].iloc[-1]
             trend = "Uptrend" if c > s50 > s200 else "Downtrend" if c < s50 < s200 else "Mixed"
-        tot, cont = _num(r.get("TotalRisk")), _num(r.get("Controversy"))
-        rows += (f'<tr data-k="{e(t)} {e(name.upper())}"><td class="tk"><a href="lookup/{e(t)}.html">{e(t)}</a></td>'
-                 f'<td class="cn">{e(name)}</td><td><span class="eg" style="background:{GRADE_COLOR[a["Grade"]]}">'
-                 f'{a["Grade"].replace("ESG ", "")}</span></td><td>{tot:.1f}</td>'
-                 f'<td>{f"{cont:.0f}" if np.isfinite(cont) else "-"}</td><td>{e(r.get("PeerGroup") or "")}</td>'
+        w = float(m.get("Weight") or np.nan)
+        rows += (f'<tr data-k="{e(t)} {e(name.upper())}"><td class="tk">{e(t)}</td><td class="cn">{e(name)}</td>'
+                 f'<td>{e(m.get("Sector") or "")}</td><td>{f"{w:.2f}%" if np.isfinite(w) else "-"}</td>'
                  f'<td class="{"up" if ch >= 0 else "dn"}">{f"{ch:+.1f}%" if np.isfinite(ch) else "-"}</td>'
                  f'<td class="{trend.lower()}">{trend}</td></tr>')
-    return (f'<h2>All qualified ESG companies ({len(qual)})</h2><p class="hint">Type in the ESG search box to filter. '
-            f'A ticker link opens its ESG brief if it has been analyzed; use <b>ESG analyze</b> for a fresh full report.</p>'
-            f'<div class="wrap"><table class="esgtab" id="esglist"><tr><th>Ticker</th><th>Company</th><th>Grade</th>'
-            f'<th>ESG risk</th><th>Contro&shy;versy</th><th>Peer group</th><th>Today</th><th>Trend</th></tr>{rows}</table></div>')
+    return (f'<h2>All qualified ESG companies ({len(qual)})</h2><p class="hint">Canada first, then by weight in the ESG '
+            f'fund. Type in the ESG search box to filter; <b>ESG analyze</b> gives any ticker a full ESG and breakout report.</p>'
+            f'<div class="wrap"><table class="esgtab" id="esglist"><tr><th>Ticker</th><th>Company</th><th>Sector</th>'
+            f'<th>Fund weight</th><th>Today</th><th>Trend</th></tr>{rows}</table></div>')
 
 
 def run_scan(outdir):
@@ -403,10 +374,13 @@ def run_scan(outdir):
     diag = []
     bs.PROFILES.update(bs._load_profiles(os.path.join(outdir, "sectors.csv")))      # read-only: main scanner's cache
     bs.PROFILES.update(bs._load_profiles(os.path.join(esg_dir, "sectors.csv")))
-    print("ESG: loading universe...")
-    membership = bs.build_universe(ESG_INDEXES)
-    universe = sorted(membership, key=lambda t: (bs.region(t) != "CA", t))
-    print(f"ESG universe: {len(universe)} companies")
+    try:
+        known = bs.build_universe(["tsx", "sp500"])           # only to map holdings symbols to Yahoo tickers
+    except Exception:
+        known = {}
+    members = fetch_members(esg_dir, diag, known)
+    universe = sorted(members, key=lambda t: (bs.region(t) != "CA", t))
+    print(f"ESG universe: {len(universe)} index members")
     ctx_t = ["SPY", "DIA", "QQQ", "IWM", "XIU.TO"]
     raw = bs.download(sorted(set(universe) | set(ctx_t) | set(bs.ALL_SECTOR_ETFS) | set(bs.MACRO_TICKERS)
                              | set(bs.STRESS_TICKERS) | {t for t, _ in ESG_ETFS},
@@ -417,30 +391,17 @@ def run_scan(outdir):
             data[t] = bs.prep(bs.drop_live_bar(d))
         except Exception:
             pass
-    # liquid names only (the main scanner's price and dollar-volume floors), then their ESG ratings
-    liquid = []
+    qual = {}
     for t in universe:
         d = data.get(t)
         if d is None or len(d) < 60:
             continue
         min_dv = bs.CFG["min_dollar_vol_ca"] if bs.region(t) == "CA" else bs.CFG["min_dollar_vol"]
         if d["Close"].iloc[-1] >= bs.CFG["min_price"] and float((d["Close"] * d["Volume"]).iloc[-50:].mean()) >= min_dv:
-            liquid.append(t)
-    ratings = refresh_ratings(liquid, os.path.join(esg_dir, "ratings.csv"), diag)
-    # industry for the fossil-fuel screen: profiles for rated names we don't know yet
-    rated = [t for t in liquid if (ratings.get(t) or {}).get("Status") == "ok"]
-    missing = [t for t in rated if not bs.PROFILES.get(t, {}).get("Industry")]
-    if missing:
-        try:
-            bs.fetch_sector_earnings([], os.path.join(esg_dir, "sectors.csv"), profile_only=missing[:300])
-        except Exception as ex:
-            diag.append(f"ESG profiles failed: {str(ex)[:100]}")
-    qual = {}
-    for t in rated:
-        a = assess(t, ratings[t])
-        if a["Qualified"]:
-            qual[t] = a
-    print(f"ESG: {len(rated)} rated, {len(qual)} qualify")
+            qual[t] = assess(t, members[t])
+    diag.append(f"ESG: {len(universe)} members, prices for {sum(1 for t in universe if t in data)}, "
+                f"{len(qual)} liquid enough to scan")
+    print(diag[-1])
 
     # the main scanner's breakout logic, unchanged, on the qualified list
     found, radar = [], []
@@ -452,14 +413,15 @@ def run_scan(outdir):
             f = None if r else bs.check_forming(data[t], A, min_dv)
         except Exception:
             r = f = None
+        idx = f"ESG ({members[t]['Fund']})"
         if r:
-            r.update(Ticker=t, Indexes=", ".join(sorted(membership[t])))
+            r.update(Ticker=t, Indexes=idx)
             found.append((r, A))
         elif f:
-            f.update(Ticker=t, Indexes=", ".join(sorted(membership[t])), Region=bs.region(t))
+            f.update(Ticker=t, Indexes=idx, Region=bs.region(t))
             radar.append(f)
     radar = bs.radar_merge(radar, os.path.join(esg_dir, "radar.csv"), save=True)
-    ctx = bs.build_context(data, universe)
+    ctx = bs.build_context(data, list(qual))
     try:
         sectors, industries, earnings = bs.fetch_sector_earnings(
             [r["Ticker"] for r, _ in found], os.path.join(esg_dir, "sectors.csv"),
@@ -468,6 +430,8 @@ def run_scan(outdir):
         sectors, industries, earnings = {}, {}, {}
         diag.append(f"ESG sector/earnings lookup failed: {str(ex)[:100]}")
     ctx.update(sector=sectors, industry=industries, earnings=earnings)
+    for t in qual:                                        # refresh SDG links now that more industries are known
+        qual[t] = assess(t, members[t])
     results = []
     for r, A in found:
         try:
@@ -488,16 +452,18 @@ def run_scan(outdir):
 
     # cards get the ESG brief under the company profile (patched in this process only)
     orig = bs.company_html
-    bs.company_html = lambda t, full=True: orig(t, full) + (brief_html(t, ratings.get(t), qual[t]) if t in qual else "")
-    review = summary_html(asof, qual, ratings, data, universe, res, radar, diag) + list_html(qual, ratings, data)
+    bs.company_html = lambda t, full=True: orig(t, full) + (brief_html(t, members.get(t), qual[t]) if t in qual else "")
+    review = summary_html(asof, qual, members, data, res, radar, diag) + list_html(qual, members, data)
     path = os.path.join(esg_dir, "index.html")
-    bs.write_html(path, asof, rows, res, data, bs.market_context(data), len(data), review, title="ESG scanner",
-                  subtitle=f"ESG-only scan: {len(qual)} companies that meet the UN-based criteria", radar=radar)
-    bs.company_html = orig
+    try:
+        bs.write_html(path, asof, rows, res, data, bs.market_context(data), len(qual), review, title="ESG scanner",
+                      subtitle=f"ESG-only scan of {len(qual)} companies in the MSCI Choice ESG Screened indexes", radar=radar)
+    finally:
+        bs.company_html = orig
     page = _esg_page_chrome(open(path, encoding="utf-8").read())
     with open(path, "w", encoding="utf-8") as f:
         f.write(page)
-    json.dump(dict(asof=asof, qualified=len(qual), rated=len(rated), breakouts=len(res), radar=len(radar),
+    json.dump(dict(asof=asof, members=len(members), qualified=len(qual), breakouts=len(res), radar=len(radar),
                    diag=diag, minutes=round((time.time() - t0) / 60, 1)),
               open(os.path.join(esg_dir, "status.json"), "w"))
     print("\n".join(diag))
@@ -511,18 +477,23 @@ def run_scan(outdir):
 def run_lookup(outdir, ticker):
     import lookup as lk
     key = lk.clean(ticker)
-    esg_dir = os.path.join(outdir, "esg", "lookup")
-    os.makedirs(esg_dir, exist_ok=True)
+    esg_dir = os.path.join(outdir, "esg")
+    os.makedirs(os.path.join(esg_dir, "lookup"), exist_ok=True)
     if not key:
         print("No valid ticker given.")
         return 1
     t, raw = lk.fetch(key)
+    out = os.path.join(esg_dir, "lookup", f"{key}.html")
     if t is None:
-        with open(os.path.join(esg_dir, f"{key}.html"), "w", encoding="utf-8") as fh:
+        with open(out, "w", encoding="utf-8") as fh:
             fh.write(f'<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
                      f'<body style="font-family:sans-serif;margin:16px"><p><a href="../index.html">ESG home</a></p>'
                      f'<h1>{e(key)}</h1><p>No price data found for {e(key)} (also tried {e(key)}.TO).</p></body>')
         return 0
+    diag = []
+    members = load_members(esg_dir)
+    if not members:
+        members = fetch_members(esg_dir, diag)
     reg = bs.region(t)
     bench_t = bs.BENCH[reg]
     data = {t: bs.prep(bs.drop_live_bar(raw))}
@@ -537,9 +508,8 @@ def run_lookup(outdir, ticker):
     bs.PROFILES[t] = {"Name": info.get("longName") or "", "Sector": info.get("sector") or "",
                       "Industry": info.get("industry") or "", "Country": info.get("country") or "",
                       "Website": info.get("website") or "", "Summary": info.get("longBusinessSummary") or ""}
-    status, d = fetch_rating(t)
-    rating = dict(Ticker=t, Status=status, **d) if status == "ok" else {"Status": status}
-    a = assess(t, rating)
+    is_fund = str(info.get("quoteType") or "").upper() in ("ETF", "MUTUALFUND")
+    a = assess(t, members.get(t), lists_ok=bool(members), is_fund=is_fund)
     ctx = bs.build_context(data, [t])
     ctx["breadth"] = {"US": None, "CA": None}
     ctx["internals"] = {"US": None, "CA": None}
@@ -553,14 +523,12 @@ def run_lookup(outdir, ticker):
     if bench is not None:
         bench.attrs["t"] = bench_t
     page = lk.build_page(key, t, data[t], F, ctx, bench)
-    note = ("" if status != "error" else
-            '<p class="hint">The ESG rating could not be fetched just now (data source busy); try again later.</p>')
-    sec = (f'<section><h2>ESG assessment (UN standards)</h2>{note}{brief_html(t, rating, a, open_=True)}</section>')
+    sec = f'<section><h2>ESG assessment (UN standards)</h2>{brief_html(t, members.get(t), a, open_=True)}</section>'
     i = page.find("<h2")
     page = page[:i] + sec + page[i:] if i > 0 else page.replace("</main>", sec + "</main>")
     page = _esg_page_chrome(page, depth=2)
     for k in {key, lk.clean(t)}:
-        with open(os.path.join(esg_dir, f"{k}.html"), "w", encoding="utf-8") as fh:
+        with open(os.path.join(esg_dir, "lookup", f"{k}.html"), "w", encoding="utf-8") as fh:
             fh.write(page)
     print(f"ESG lookup written for {t}: {a['Grade']}")
     return 0
@@ -569,26 +537,34 @@ def run_lookup(outdir, ticker):
 # --------------------------------------------------------------------------
 def selftest():
     ok = True
-    bs.PROFILES["XOMT"] = {"Industry": "Oil & Gas Integrated", "Name": "Oil Test"}
-    bs.PROFILES["MSFT"] = {"Industry": "Software - Infrastructure", "Name": "Soft Test"}
-    cases = [
-        ("MSFT", dict(Status="ok", TotalRisk=15.0, Controversy=2, PeerGroup="Software & Services", Flags=""), "ESG leader"),
-        ("BANK", dict(Status="ok", TotalRisk=24.0, Controversy=3, PeerGroup="Banks", Flags=""), "ESG qualified"),
-        ("XOMT", dict(Status="ok", TotalRisk=25.0, Controversy=2, PeerGroup="Oil & Gas Producers", Flags=""), "Not qualified"),
-        ("SMOK", dict(Status="ok", TotalRisk=18.0, Controversy=1, PeerGroup="Food Products", Flags="tobacco"), "Not qualified"),
-        ("CONT", dict(Status="ok", TotalRisk=12.0, Controversy=4, PeerGroup="Retailing", Flags=""), "Not qualified"),
-        ("HIGH", dict(Status="ok", TotalRisk=33.0, Controversy=1, PeerGroup="Chemicals", Flags=""), "Not qualified"),
-        ("NONE", {"Status": "none"}, "No rating"),
-    ]
-    for t, r, want in cases:
-        a = assess(t, r)
-        good = a["Grade"] == want
+    us = ('Fund Holdings as of,"Oct 17, 2026"\nInception Date,"Jun 16, 2020"\n \n'
+          'Ticker,Name,Sector,Asset Class,Market Value,Weight (%),Notional Value,Quantity,Price,Location\n'
+          '"MSFT","MICROSOFT CORP","Information Technology","Equity","1,000","6.51","1,000","10","400","United States"\n'
+          '"BRKB","BERKSHIRE HATHAWAY INC CLASS B","Financials","Equity","1,000","1.20","1,000","10","400","United States"\n'
+          '"USD","USD CASH","Cash and/or Derivatives","Cash","10","0.05","10","10","1","United States"\n'
+          '"-","-","-","-","-","-","-","-","-","-"\n')
+    df, asof = parse_holdings(us)
+    good = list(df["Ticker"]) == ["MSFT", "BRKB"] and asof == "2026-10-17" and abs(df["Weight"].iloc[0] - 6.51) < 1e-9
+    known = {(_norm(t), bs.region(t)): t for t in ["BRK-B", "RCI-B.TO", "RY.TO"]}
+    good &= map_ticker("BRKB", "US", known) == "BRK-B" and map_ticker("RCI.B", "CA", known) == "RCI-B.TO"
+    good &= map_ticker("RY", "CA", known) == "RY.TO" and map_ticker("GIB.A", "CA", {}) == "GIB-A.TO"
+    print("esg     : holdings parse and ticker mapping " + ("ok" if good else "FAILED"))
+    ok &= good
+    bs.PROFILES["MSFT"] = {"Industry": "Software - Infrastructure", "Sector": "Technology", "Name": "Microsoft"}
+    bs.PROFILES["XOMT"] = {"Industry": "Oil & Gas Integrated", "Sector": "Energy"}
+    bs.PROFILES["LMTT"] = {"Industry": "Aerospace & Defense", "Sector": "Industrials"}
+    mem = dict(Ticker="MSFT", Region="US", Weight=6.51, AsOf="2026-10-17", Sector="Information Technology")
+    for t, m, kw, want, needle in [("MSFT", mem, {}, "ESG qualified", "UN Global Compact"),
+                                   ("XOMT", None, {}, "Not qualified", "fossil-fuel"),
+                                   ("LMTT", None, {}, "Not qualified", "weapons"),
+                                   ("XIU.TO", None, dict(is_fund=True), "Not screened", "fund"),
+                                   ("ZZZ", None, dict(lists_ok=False), "Unknown", "could not be loaded")]:
+        a = assess(t, m, **kw)
+        h = brief_html(t, m, a)
+        good = a["Grade"] == want and needle in " ".join(a["Reasons"] + a["Fails"]) and "UNGC" in h
         ok &= good
-        h = brief_html(t, r, a)
-        ok &= "UNGC" in h
-        print(f"esg     : {t:<5} {a['Grade']:<14}" + ("" if good else f" EXPECTED {want}") +
-              (f" SDGs {a['SDGs']}" if a["SDGs"] else ""))
-    ok &= assess("MSFT", cases[0][1])["SDGs"] == [9]
+        print(f"esg     : {t:<6} {a['Grade']:<14}" + ("" if good else " FAILED") + (f" SDGs {a['SDGs']}" if a["SDGs"] else ""))
+    ok &= assess("MSFT", mem)["SDGs"] == [9]
     print("ESG SELFTEST", "PASSED" if ok else "FAILED")
     return ok
 
