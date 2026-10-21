@@ -265,6 +265,7 @@ def brief_html(t, member, a, open_=False):
 ESG_CSS = """
 details.esg{background:#f3f8f4;border:1px solid #cfe3d4;border-radius:10px;padding:8px 10px;margin:8px 0}
 details.esg summary{cursor:pointer;font-weight:600}
+details.esg ul.ck{list-style:none;padding-left:2px}
 .eg{color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;margin-right:4px}
 .sdg{display:inline-block;background:#e6f0fa;color:#123;border-radius:6px;padding:2px 7px;margin:2px;font-size:12px}
 table.ungc{width:100%}table.ungc td,table.ungc th{font-size:13px;vertical-align:top;white-space:normal}
@@ -282,9 +283,24 @@ ESG_SEARCH = """
 <script>
 window.esgFilter = q => { q = (q || '').trim().toUpperCase();
   document.querySelectorAll('#esglist tr[data-k]').forEach(r => { r.style.display = !q || r.dataset.k.includes(q) ? '' : 'none'; }); };
-window.esgLook = () => { const k = (document.getElementById('elk').value || '').trim().toUpperCase().replace(/ +/g, '');
-  if (!/^[A-Z0-9][A-Z0-9.=^-]{0,14}$/.test(k)) { document.getElementById('runstatus').textContent = 'Type a ticker, e.g. RY.TO or MSFT.'; return; }
-  runNow('esg_lookup', k); };
+window.esgLook = async () => {
+  const st = document.getElementById('runstatus');
+  const k = (document.getElementById('elk').value || '').trim().toUpperCase().replace(/ +/g, '');
+  if (!/^[A-Z0-9][A-Z0-9.=^-]{0,14}$/.test(k)) { st.textContent = 'Type a ticker, e.g. RY.TO or MSFT.'; return; }
+  const here = location.pathname.includes('/esg/lookup/') ? '../' : '';
+  const cands = k.includes('.') ? [k, k.replace('.', '-')] : [k, k + '.TO'];
+  let list = null;
+  try { list = await (await fetch(here + 'companies.json?t=' + Date.now(), { cache: 'no-store' })).json(); } catch (e) {}
+  const hit = list && cands.find(c => list.items && list.items[c]);
+  if (hit) { location.href = here + 'company.html?t=' + encodeURIComponent(hit); return; }
+  for (const c of cands) {
+    try { const r = await fetch(here + 'lookup/' + c + '.html?t=' + Date.now(), { cache: 'no-store' });
+      if (r.ok) { location.href = here + 'lookup/' + c + '.html'; return; } } catch (e) {}
+  }
+  st.innerHTML = '<b>' + k + '</b> is not in the ESG indexes, so it does not qualify as ESG here (or the ticker is not listed in '
+    + 'the US or Canada). <a href="#" id="esgfull">Run a full ESG check with the reasons</a> (about 3 minutes).';
+  document.getElementById('esgfull').onclick = ev => { ev.preventDefault(); runNow('esg_lookup', k); };
+};
 </script>"""
 
 
@@ -470,12 +486,89 @@ def run_scan(outdir):
     page = _esg_page_chrome(open(path, encoding="utf-8").read())
     with open(path, "w", encoding="utf-8") as f:
         f.write(page)
+    try:
+        write_companies(esg_dir, asof, qual, members, data, rows, radar)
+    except Exception as ex:
+        diag.append(f"ESG company briefs failed: {str(ex)[:100]}")
     json.dump(dict(asof=asof, members=len(members), qualified=len(qual), breakouts=len(res), radar=len(radar),
                    diag=diag, minutes=round((time.time() - t0) / 60, 1)),
               open(os.path.join(esg_dir, "status.json"), "w"))
     print("\n".join(diag))
     print(f"ESG scan: {len(qual)} qualified, {len(res)} breakouts, {len(radar)} on radar in {time.time() - t0:.0f}s -> {path}")
     return 0
+
+
+# --------------------------------------------------------------------------
+# Instant ESG briefs: one small JSON for every qualified company + a page that shows one
+# --------------------------------------------------------------------------
+def write_companies(esg_dir, asof, qual, members, data, rows, radar):
+    open_rows = {r["Ticker"]: r for r in rows}
+    rad = {x["Ticker"]: x for x in radar}
+    num = lambda x, nd=2: round(float(x), nd) if x is not None and np.isfinite(float(x)) else None
+    items = {}
+    for t, a in qual.items():
+        d, m, p = data.get(t), members[t], bs.PROFILES.get(t) or {}
+        it = dict(name=p.get("Name") or str(m.get("Name") or t).title(), sector=p.get("Sector") or m.get("Sector") or "",
+                  industry=p.get("Industry") or "", country=p.get("Country") or "", website=p.get("Website") or "",
+                  summary=bs._short_summary(p["Summary"]) if p.get("Summary") else "",
+                  brief=brief_html(t, m, a, open_=True))
+        if d is not None and len(d) > 2:
+            it.update(price=num(d["Close"].iloc[-1]), chg1=num(bs._chg(d, 1), 1), chg21=num(bs._chg(d, 21), 1),
+                      ytd=num(bs._ytd(d), 1))
+            if len(d) > 200:
+                label, color, what, _ = bs.holding_status(d)
+                it.update(trend=label, trend_color=color, trend_what=what)
+        if t in open_rows:
+            r = open_rows[t]
+            label, color, _ = bs.STATUS_INFO.get(r["Status"], (r["Status"], "#555", ""))
+            sc = bs._num(r.get("Score"))
+            it["setup"] = dict(kind="breakout", label=label, color=color, score=round(sc) if np.isfinite(sc) else None,
+                               note=bs._plain(r.get("Note")))
+        elif t in rad:
+            x = rad[t]
+            it["setup"] = dict(kind="radar", label="On the radar", color="#1d5fbf",
+                               note=f"Close to a breakout: it needs a close above {bs._f(x.get('Trigger'))} on strong volume "
+                                    f"({bs._f(x.get('DistPct'), 1)}% away).")
+        items[t] = it
+    with open(os.path.join(esg_dir, "companies.json"), "w") as f:
+        json.dump(dict(asof=asof, items=items), f, default=lambda o: o.item() if hasattr(o, "item") else str(o))
+    run = bs.RUN_HTML.replace('<form class="lookbar"', '<form class="lookbar" style="display:none"')
+    page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>ESG brief</title>
+<style>{bs.PAGE_CSS}{bs.RUN_CSS}{ESG_CSS}.runbar button{{display:none}}.px2{{font-size:22px;font-weight:700}}</style></head>
+<body><main><p class="links"><a href="index.html">&larr; ESG home</a></p>
+{run}
+<div id="out"><p class="hint">Loading...</p></div>
+<p class="hint">ESG screen and breakout rules as in the ESG scanner. Not investment advice.</p></main>
+<script>
+(async function () {{
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));
+  const pc = x => x == null ? '-' : `<b class="${{x >= 0 ? 'up' : 'dn'}}">${{x >= 0 ? '+' : ''}}${{x.toFixed(1)}}%</b>`;
+  const t = new URLSearchParams(location.search).get('t') || '';
+  const out = document.getElementById('out');
+  let j = null;
+  try {{ j = await (await fetch('companies.json?t=' + Date.now(), {{ cache: 'no-store' }})).json(); }} catch (e) {{}}
+  const c = j && j.items && j.items[t];
+  if (!c) {{ out.innerHTML = `<h1>${{esc(t)}}</h1><p>${{esc(t)}} is not in today's ESG list.</p>`; return; }}
+  const day = new Date(j.asof + 'T12:00:00').toLocaleDateString('en-US', {{ weekday: 'short', month: 'short', day: 'numeric' }});
+  const s = c.setup;
+  out.innerHTML = `<h1>${{esc(c.name)}} <small class="hint">${{esc(t)}}</small></h1>
+   <p class="hint">${{[c.industry, c.sector, c.country].filter(Boolean).map(esc).join(' &middot; ')}}</p>
+   <p class="hint">Prices at the close of ${{day}} (updated after each evening scan).</p>
+   ${{c.summary ? `<p>${{esc(c.summary)}}</p>` : ''}}
+   <div class="facts"><div><span>Price</span><b>${{c.price != null ? c.price.toFixed(2) : '-'}}</b></div>
+     <div><span>Day</span>${{pc(c.chg1)}}</div><div><span>1 month</span>${{pc(c.chg21)}}</div><div><span>Year to date</span>${{pc(c.ytd)}}</div></div>
+   ${{c.trend ? `<p><span class="eg" style="background:${{esc(c.trend_color)}}">${{esc(c.trend)}}</span> ${{esc(c.trend_what)}}</p>` : ''}}
+   <h2>Breakout</h2><p>${{s ? `<span class="eg" style="background:${{esc(s.color)}}">${{esc(s.label)}}</span>${{s.score != null ? ' score ' + s.score + ' &middot; ' : ' '}}${{esc(s.note)}}` : 'No breakout setup right now.'}}</p>
+   <h2>ESG</h2>${{c.brief}}
+   <p><a href="#" class="btn" id="full" style="display:inline-block;background:var(--accent,#1d5fbf);color:#fff;padding:9px 13px;border-radius:9px;text-decoration:none;font-weight:600">Full report: earnings, valuation, long-term view</a></p>`;
+  document.getElementById('full').onclick = async ev => {{ ev.preventDefault();
+    try {{ const r = await fetch('lookup/' + t + '.html?t=' + Date.now(), {{ cache: 'no-store' }}); if (r.ok) {{ location.href = 'lookup/' + t + '.html'; return; }} }} catch (e) {{}}
+    runNow('esg_lookup', t); window.scrollTo(0, 0); }};
+}})();
+</script></body></html>"""
+    with open(os.path.join(esg_dir, "company.html"), "w", encoding="utf-8") as f:
+        f.write(page)
 
 
 # --------------------------------------------------------------------------
