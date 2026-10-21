@@ -1,0 +1,151 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>ESG brief</title>
+<style>
+:root{--bg:#f6f6f4;--card:#fff;--ink:#1c1c1e;--muted:#6b6b70;--line:#e6e6e3;--up:#16794a;--dn:#b42318}
+@media (prefers-color-scheme:dark){:root{--bg:#151517;--card:#1f1f22;--ink:#ececee;--muted:#9a9aa0;--line:#2e2e33;--up:#4cc38a;--dn:#ff6b5e}}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px} h1{font-size:22px;margin:4px 0} h2{font-size:17px;margin:24px 0 6px}
+.hint{color:var(--muted);font-size:13px} a{color:#1d5fbf}
+.card{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c);border-radius:12px;padding:12px 14px;margin:10px 0}
+.card header{display:flex;justify-content:space-between;gap:8px;align-items:center} .card h3{margin:0;font-size:19px}
+.badge{background:var(--c);color:#fff;font-weight:700;font-size:13px;padding:4px 10px;border-radius:8px}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;font-size:13px;margin-top:8px}
+.facts div{background:var(--bg);border-radius:8px;padding:6px 8px} .facts span{display:block;color:var(--muted);font-size:11px}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px} table{border-collapse:collapse;width:100%;font-size:13px;background:var(--card)}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap} th{color:var(--muted)}
+.up{color:var(--up)} .dn{color:var(--dn)}
+
+.lookbar{display:flex;gap:6px;margin:8px 0 4px} .lookbar input{flex:1;min-width:0;padding:9px 10px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:15px}
+.lookbar button{padding:9px 14px;border-radius:9px;border:0;background:var(--ink);color:var(--bg);font-weight:600}
+.runbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
+.runbar button{font:600 14px/1 -apple-system,"Segoe UI",Roboto,sans-serif;border:0;border-radius:10px;padding:11px 14px;cursor:pointer;
+  background:#1d5fbf;color:#fff} .runbar button.alt{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+.runbar button:disabled{opacity:.6}
+#runstatus{font-size:13px;color:var(--muted);width:100%}
+#runsetup{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:8px 0;font-size:14px;display:none}
+#runsetup input{width:100%;font:14px monospace;padding:9px;border:1px solid var(--line);border-radius:8px;margin:6px 0;background:var(--bg);color:var(--ink)}
+#runsetup ol{padding-left:20px;margin:6px 0} #runsetup li{margin:4px 0}
+#runsetup button{font:600 14px/1 -apple-system,"Segoe UI",Roboto,sans-serif;border:0;border-radius:10px;padding:10px 14px;background:#1d5fbf;color:#fff;cursor:pointer}
+#runsetup button.alt{background:var(--bg);color:var(--ink);border:1px solid var(--line)}
+
+details.esg{background:#f3f8f4;border:1px solid #cfe3d4;border-radius:10px;padding:8px 10px;margin:8px 0}
+details.esg summary{cursor:pointer;font-weight:600}
+details.esg ul.ck{list-style:none;padding-left:2px}
+.eg{color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;margin-right:4px}
+.sdg{display:inline-block;background:#e6f0fa;color:#123;border-radius:6px;padding:2px 7px;margin:2px;font-size:12px}
+table.ungc{width:100%}table.ungc td,table.ungc th{font-size:13px;vertical-align:top;white-space:normal}
+.esgtab{width:100%}.esgtab td{font-size:13px}
+.esgsum p{margin:4px 0}
+@media (prefers-color-scheme:dark){details.esg{background:#16231a;border-color:#2c4a35}.sdg{background:#1d2b3a;color:#dce8f5}}
+.runbar button{display:none}.px2{font-size:22px;font-weight:700}</style></head>
+<body><main><p class="links"><a href="index.html">&larr; ESG home</a></p>
+
+<div class="runbar">
+  <button id="btn-scan" onclick="runNow('scan')">&#8635; Scan now</button>
+  <button class="alt" id="btn-morning" onclick="runNow('morning')">Morning check now</button>
+  <button class="alt" onclick="toggleSetup()">&#9881;</button>
+  <div id="runstatus"></div>
+</div>
+<form class="lookbar" style="display:none" onsubmit="event.preventDefault(); lookUp();">
+  <input id="lk" placeholder="Look up a ticker: SHOP.TO, NVDA, L.TO..." autocomplete="off" autocapitalize="characters" maxlength="15">
+  <button type="submit">Analyze</button>
+</form>
+<div id="runsetup">
+  <b>One-time setup for the Scan now button</b>
+  <ol>
+    <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub &rarr; new fine-grained token</a>.</li>
+    <li>Name it "scan button", set an expiry (up to 1 year).</li>
+    <li>Repository access: <b>Only select repositories</b> &rarr; <b>breakout-scanner</b>.</li>
+    <li>Permissions &rarr; Repository &rarr; <b>Actions: Read and write</b>. Nothing else.</li>
+    <li>Generate, copy the token, paste it here and tap Save.</li>
+  </ol>
+  <input id="tok" type="password" placeholder="github_pat_..." autocomplete="off">
+  <button onclick="saveTok()">Save on this device</button> <button class="alt" onclick="clearTok()">Remove</button>
+  <p class="hint">The token stays in this browser only. It can do nothing except start and read runs of this one repository.
+  Without it, the buttons open GitHub's Run page instead.</p>
+</div>
+<script>
+(function(){
+  const owner = location.hostname.split('.')[0];
+  const repo = location.pathname.split('/').filter(Boolean)[0] || 'breakout-scanner';
+  const api = `https://api.github.com/repos/${owner}/${repo}/actions`;
+  const base = `/${repo}/`;
+  const KEY = 'scanTok';
+  const st = document.getElementById('runstatus');
+  const get = () => { try { return localStorage.getItem(KEY) || ''; } catch(e) { return ''; } };
+  window.toggleSetup = () => { const s = document.getElementById('runsetup'); s.style.display = s.style.display === 'block' ? 'none' : 'block'; };
+  window.saveTok = () => { try { localStorage.setItem(KEY, document.getElementById('tok').value.trim()); } catch(e) {} toggleSetup(); st.textContent = 'Saved. Tap Scan now.'; };
+  window.clearTok = () => { try { localStorage.removeItem(KEY); } catch(e) {} st.textContent = 'Token removed from this device.'; };
+  const H = t => ({ 'Authorization': 'Bearer ' + t, 'Accept': 'application/vnd.github+json' });
+  window.lookUp = () => {
+    const k = (document.getElementById('lk').value || '').trim().toUpperCase().replace(/ +/g, '');
+    if (!/^[A-Z0-9][A-Z0-9.=^-]{0,14}$/.test(k)) { st.textContent = 'Type a ticker, e.g. SHOP.TO or NVDA.'; return; }
+    runNow('lookup', k);
+  };
+  window.runNow = async (mode, ticker) => {
+    const t = get();
+    if (!t) { document.getElementById('runsetup').style.display = 'block';
+      st.textContent = 'This device needs your GitHub key once (steps below). After that this button works with one tap.'; return; }
+    document.querySelectorAll('.runbar button, .lookbar button').forEach(b => b.disabled = true);
+    const started = new Date();
+    st.textContent = 'Starting ' + (ticker ? 'lookup of ' + ticker : mode) + '...';
+    const inputs = ticker ? { mode, ticker } : { mode };
+    try {
+      const r = await fetch(`${api}/workflows/scan.yml/dispatches`, { method: 'POST', headers: H(t),
+        body: JSON.stringify({ ref: 'main', inputs }) });
+      if (r.status !== 204) { throw new Error(r.status === 401 || r.status === 403 ? 'token rejected - check it in setup' : 'GitHub said ' + r.status); }
+      let run = null;
+      for (let i = 0; i < 160; i++) {
+        await new Promise(res => setTimeout(res, i < 3 ? 5000 : 15000));
+        const q = await fetch(`${api}/runs?event=workflow_dispatch&per_page=5`, { headers: H(t) });
+        const j = await q.json();
+        run = (j.workflow_runs || []).find(x => new Date(x.created_at) >= new Date(started - 60000));
+        const mins = Math.round((new Date() - started) / 60000);
+        if (!run) { st.textContent = 'Waiting for GitHub to start the run...'; continue; }
+        if (run.status !== 'completed') { st.textContent = (run.status === 'queued' ? 'Queued (another run is finishing first)' : 'Running') + ' (' + mins + ' min). '
+          + (ticker ? 'A lookup takes about 2-3 minutes.' : 'A full scan takes about 6-8 minutes.') + ' You can leave this page open.'; continue; }
+        if (run.conclusion === 'success') {
+          st.textContent = 'Done. Reloading...';
+          const ny = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+          const mins = ny.getHours() * 60 + ny.getMinutes();
+          const open = ny.getDay() > 0 && ny.getDay() < 6 && mins >= 570 && mins < 960;
+          const page = mode === 'esg_lookup' ? 'esg/lookup/' + ticker + '.html' : mode === 'esg' ? 'esg/index.html' : ticker ? 'lookup/' + ticker + '.html' : mode === 'morning' ? 'morning.html' : (open ? 'live.html' : 'index.html');
+          setTimeout(() => { location.href = base + page + '?t=' + Date.now(); }, 25000);
+        } else { st.innerHTML = 'The run ended with "' + run.conclusion + '". <a href="' + run.html_url + '" target="_blank">See details</a>.'; }
+        break;
+      }
+    } catch (e) { st.textContent = 'Could not start: ' + e.message; }
+    document.querySelectorAll('.runbar button, .lookbar button').forEach(b => b.disabled = false);
+  };
+})();
+</script>
+
+<div id="out"><p class="hint">Loading...</p></div>
+<p class="hint">ESG screen and breakout rules as in the ESG scanner. Not investment advice.</p></main>
+<script>
+(async function () {
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const pc = x => x == null ? '-' : `<b class="${x >= 0 ? 'up' : 'dn'}">${x >= 0 ? '+' : ''}${x.toFixed(1)}%</b>`;
+  const t = new URLSearchParams(location.search).get('t') || '';
+  const out = document.getElementById('out');
+  let j = null;
+  try { j = await (await fetch('companies.json?t=' + Date.now(), { cache: 'no-store' })).json(); } catch (e) {}
+  const c = j && j.items && j.items[t];
+  if (!c) { out.innerHTML = `<h1>${esc(t)}</h1><p>${esc(t)} is not in today's ESG list.</p>`; return; }
+  const day = new Date(j.asof + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const s = c.setup;
+  out.innerHTML = `<h1>${esc(c.name)} <small class="hint">${esc(t)}</small></h1>
+   <p class="hint">${[c.industry, c.sector, c.country].filter(Boolean).map(esc).join(' &middot; ')}</p>
+   <p class="hint">Prices at the close of ${day} (updated after each evening scan).</p>
+   ${c.summary ? `<p>${esc(c.summary)}</p>` : ''}
+   <div class="facts"><div><span>Price</span><b>${c.price != null ? c.price.toFixed(2) : '-'}</b></div>
+     <div><span>Day</span>${pc(c.chg1)}</div><div><span>1 month</span>${pc(c.chg21)}</div><div><span>Year to date</span>${pc(c.ytd)}</div></div>
+   ${c.trend ? `<p><span class="eg" style="background:${esc(c.trend_color)}">${esc(c.trend)}</span> ${esc(c.trend_what)}</p>` : ''}
+   <h2>Breakout</h2><p>${s ? `<span class="eg" style="background:${esc(s.color)}">${esc(s.label)}</span>${s.score != null ? ' score ' + s.score + ' &middot; ' : ' '}${esc(s.note)}` : 'No breakout setup right now.'}</p>
+   <h2>ESG</h2>${c.brief}
+   <p><a href="#" class="btn" id="full" style="display:inline-block;background:var(--accent,#1d5fbf);color:#fff;padding:9px 13px;border-radius:9px;text-decoration:none;font-weight:600">Full report: earnings, valuation, long-term view</a></p>`;
+  document.getElementById('full').onclick = async ev => { ev.preventDefault();
+    try { const r = await fetch('lookup/' + t + '.html?t=' + Date.now(), { cache: 'no-store' }); if (r.ok) { location.href = 'lookup/' + t + '.html'; return; } } catch (e) {}
+    runNow('esg_lookup', t); window.scrollTo(0, 0); };
+})();
+</script></body></html>
