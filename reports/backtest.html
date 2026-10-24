@@ -15,6 +15,8 @@ main{max-width:760px;margin:0 auto;padding:16px} h1{font-size:22px;margin:4px 0}
 th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap} th{color:var(--muted)}
 .up{color:var(--up)} .dn{color:var(--dn)}
 
+.lookbar{display:flex;gap:6px;margin:8px 0 4px} .lookbar input{flex:1;min-width:0;padding:9px 10px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:15px}
+.lookbar button{padding:9px 14px;border-radius:9px;border:0;background:var(--ink);color:var(--bg);font-weight:600}
 .runbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}
 .runbar button{font:600 14px/1 -apple-system,"Segoe UI",Roboto,sans-serif;border:0;border-radius:10px;padding:11px 14px;cursor:pointer;
   background:#1d5fbf;color:#fff} .runbar button.alt{background:var(--card);color:var(--ink);border:1px solid var(--line)}
@@ -32,6 +34,10 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
   <button class="alt" onclick="toggleSetup()">&#9881;</button>
   <div id="runstatus"></div>
 </div>
+<form class="lookbar" onsubmit="event.preventDefault(); lookUp();">
+  <input id="lk" placeholder="Look up a ticker: SHOP.TO, NVDA, L.TO..." autocomplete="off" autocapitalize="characters" maxlength="15">
+  <button type="submit">Analyze</button>
+</form>
 <div id="runsetup">
   <b>One-time setup for the Scan now button</b>
   <ol>
@@ -51,6 +57,7 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
   const owner = location.hostname.split('.')[0];
   const repo = location.pathname.split('/').filter(Boolean)[0] || 'breakout-scanner';
   const api = `https://api.github.com/repos/${owner}/${repo}/actions`;
+  const base = `/${repo}/`;
   const KEY = 'scanTok';
   const st = document.getElementById('runstatus');
   const get = () => { try { return localStorage.getItem(KEY) || ''; } catch(e) { return ''; } };
@@ -58,16 +65,22 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
   window.saveTok = () => { try { localStorage.setItem(KEY, document.getElementById('tok').value.trim()); } catch(e) {} toggleSetup(); st.textContent = 'Saved. Tap Scan now.'; };
   window.clearTok = () => { try { localStorage.removeItem(KEY); } catch(e) {} st.textContent = 'Token removed from this device.'; };
   const H = t => ({ 'Authorization': 'Bearer ' + t, 'Accept': 'application/vnd.github+json' });
-  window.runNow = async (mode) => {
+  window.lookUp = () => {
+    const k = (document.getElementById('lk').value || '').trim().toUpperCase().replace(/ +/g, '');
+    if (!/^[A-Z0-9][A-Z0-9.=^-]{0,14}$/.test(k)) { st.textContent = 'Type a ticker, e.g. SHOP.TO or NVDA.'; return; }
+    runNow('lookup', k);
+  };
+  window.runNow = async (mode, ticker) => {
     const t = get();
-    if (!t) { window.open(`https://github.com/${owner}/${repo}/actions/workflows/scan.yml`, '_blank');
-      st.innerHTML = 'On GitHub: tap <b>Run workflow</b>, pick <b>' + mode + '</b>, then <b>Run workflow</b>. Or set up one-tap runs with &#9881;.'; return; }
-    document.querySelectorAll('.runbar button').forEach(b => b.disabled = true);
+    if (!t) { document.getElementById('runsetup').style.display = 'block';
+      st.textContent = 'This device needs your GitHub key once (steps below). After that this button works with one tap.'; return; }
+    document.querySelectorAll('.runbar button, .lookbar button').forEach(b => b.disabled = true);
     const started = new Date();
-    st.textContent = 'Starting ' + mode + '...';
+    st.textContent = 'Starting ' + (ticker ? 'lookup of ' + ticker : mode) + '...';
+    const inputs = ticker ? { mode, ticker } : { mode };
     try {
       const r = await fetch(`${api}/workflows/scan.yml/dispatches`, { method: 'POST', headers: H(t),
-        body: JSON.stringify({ ref: 'main', inputs: { mode } }) });
+        body: JSON.stringify({ ref: 'main', inputs }) });
       if (r.status !== 204) { throw new Error(r.status === 401 || r.status === 403 ? 'token rejected - check it in setup' : 'GitHub said ' + r.status); }
       let run = null;
       for (let i = 0; i < 160; i++) {
@@ -77,27 +90,28 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
         run = (j.workflow_runs || []).find(x => new Date(x.created_at) >= new Date(started - 60000));
         const mins = Math.round((new Date() - started) / 60000);
         if (!run) { st.textContent = 'Waiting for GitHub to start the run...'; continue; }
-        if (run.status !== 'completed') { st.textContent = (run.status === 'queued' ? 'Queued' : 'Running') + ' (' + mins + ' min). A full scan takes about 6-8 minutes; you can leave this page open.'; continue; }
+        if (run.status !== 'completed') { st.textContent = (run.status === 'queued' ? 'Queued (another run is finishing first)' : 'Running') + ' (' + mins + ' min). '
+          + (ticker ? 'A lookup takes about 2-3 minutes.' : 'A full scan takes about 6-8 minutes.') + ' You can leave this page open.'; continue; }
         if (run.conclusion === 'success') {
           st.textContent = 'Done. Reloading...';
           const ny = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
           const mins = ny.getHours() * 60 + ny.getMinutes();
           const open = ny.getDay() > 0 && ny.getDay() < 6 && mins >= 570 && mins < 960;
-          const page = mode === 'morning' ? 'morning.html' : (open ? 'live.html' : 'index.html');
-          setTimeout(() => { location.href = page + '?t=' + Date.now(); }, 20000);
+          const page = mode === 'esg_lookup' ? 'esg/lookup/' + ticker + '.html' : mode === 'esg' ? 'esg/index.html' : ticker ? 'lookup/' + ticker + '.html' : mode === 'morning' ? 'morning.html' : (open ? 'live.html' : 'index.html');
+          setTimeout(() => { location.href = base + page + '?t=' + Date.now(); }, 25000);
         } else { st.innerHTML = 'The run ended with "' + run.conclusion + '". <a href="' + run.html_url + '" target="_blank">See details</a>.'; }
         break;
       }
     } catch (e) { st.textContent = 'Could not start: ' + e.message; }
-    document.querySelectorAll('.runbar button').forEach(b => b.disabled = false);
+    document.querySelectorAll('.runbar button, .lookbar button').forEach(b => b.disabled = false);
   };
 })();
 </script>
 
-<p class="hint">Run Oct 17, 2026 in 1 min &middot; <a href="index.html">Latest scan</a></p>
+<p class="hint">Run Oct 24, 2026 in 1 min &middot; <a href="index.html">Latest scan</a></p>
 <div>
-<p class="hint">570 stocks (sp500,tsx60,djia), 2022-08-25 to 2026-10-14. 2538 breakouts passed the hard rules;
-83% held the next day; 1313 became trades. Entry at the next open inside the buy zone, hard stop
+<p class="hint">569 stocks (sp500,tsx60,djia), 2022-09-07 to 2026-10-21. 2545 breakouts passed the hard rules;
+83% held the next day; 1319 became trades. Entry at the next open inside the buy zone, hard stop
 (filled at the open if it gaps through), half sold at the target, the rest trailed by 2 ATR, 15-day time stop,
 0.1% slippage each side. R = profit divided by the initial risk per share; average R above 0 means the rules made money.</p>
 <h2>Does the scorecard work?</h2><div class="wrap"><table class="dataframe">
@@ -119,81 +133,81 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
   <tbody>
     <tr>
       <td>All trades</td>
-      <td>1313</td>
-      <td>47.1</td>
-      <td>0.019</td>
+      <td>1319</td>
+      <td>47.2</td>
+      <td>0.020</td>
       <td>0.88</td>
       <td>-0.75</td>
       <td>1.05</td>
-      <td>24.5</td>
+      <td>26.4</td>
       <td>0.04</td>
       <td>11.6</td>
-      <td>46.9</td>
+      <td>46.5</td>
     </tr>
     <tr>
       <td>Gate pass = would be a Buy</td>
-      <td>202</td>
-      <td>50.0</td>
-      <td>0.269</td>
+      <td>203</td>
+      <td>49.8</td>
+      <td>0.267</td>
       <td>1.45</td>
-      <td>-0.91</td>
+      <td>-0.90</td>
       <td>1.59</td>
-      <td>54.3</td>
-      <td>0.95</td>
+      <td>54.1</td>
+      <td>0.94</td>
       <td>18.2</td>
-      <td>17.8</td>
+      <td>17.7</td>
     </tr>
     <tr>
       <td>Gate fail</td>
-      <td>1111</td>
-      <td>46.6</td>
-      <td>-0.027</td>
+      <td>1116</td>
+      <td>46.7</td>
+      <td>-0.025</td>
       <td>0.77</td>
       <td>-0.72</td>
-      <td>0.93</td>
-      <td>-29.8</td>
+      <td>0.94</td>
+      <td>-27.8</td>
       <td>-0.12</td>
       <td>10.4</td>
-      <td>52.2</td>
+      <td>51.7</td>
     </tr>
     <tr>
       <td>Score Under 60</td>
-      <td>614</td>
-      <td>48.5</td>
-      <td>-0.043</td>
-      <td>0.59</td>
-      <td>-0.64</td>
-      <td>0.87</td>
-      <td>-26.6</td>
-      <td>-0.14</td>
-      <td>8.3</td>
-      <td>66.6</td>
+      <td>616</td>
+      <td>48.7</td>
+      <td>-0.036</td>
+      <td>0.61</td>
+      <td>-0.65</td>
+      <td>0.89</td>
+      <td>-22.2</td>
+      <td>-0.12</td>
+      <td>8.2</td>
+      <td>66.4</td>
     </tr>
     <tr>
       <td>Score 60-69</td>
       <td>323</td>
       <td>44.6</td>
-      <td>-0.082</td>
+      <td>-0.087</td>
       <td>0.81</td>
       <td>-0.80</td>
       <td>0.81</td>
-      <td>-26.6</td>
-      <td>-0.36</td>
+      <td>-28.1</td>
+      <td>-0.39</td>
       <td>10.7</td>
-      <td>43.3</td>
+      <td>42.4</td>
     </tr>
     <tr>
       <td>Score 70+</td>
-      <td>376</td>
-      <td>47.1</td>
-      <td>0.207</td>
-      <td>1.42</td>
+      <td>380</td>
+      <td>46.8</td>
+      <td>0.202</td>
+      <td>1.41</td>
       <td>-0.87</td>
-      <td>1.45</td>
-      <td>77.7</td>
-      <td>0.69</td>
-      <td>17.8</td>
-      <td>17.8</td>
+      <td>1.44</td>
+      <td>76.7</td>
+      <td>0.67</td>
+      <td>17.7</td>
+      <td>17.6</td>
     </tr>
   </tbody>
 </table></div>
@@ -216,81 +230,81 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
   <tbody>
     <tr>
       <td>A: Before: half at target, trail rest</td>
-      <td>1313</td>
-      <td>47.1</td>
-      <td>0.019</td>
+      <td>1319</td>
+      <td>47.2</td>
+      <td>0.020</td>
       <td>0.88</td>
       <td>-0.75</td>
       <td>1.05</td>
-      <td>24.5</td>
+      <td>26.4</td>
       <td>0.04</td>
       <td>11.6</td>
-      <td>46.9</td>
+      <td>46.5</td>
     </tr>
     <tr>
       <td>B: + failed-breakout exit + breakeven at +1R</td>
-      <td>1313</td>
-      <td>42.0</td>
-      <td>0.005</td>
+      <td>1319</td>
+      <td>42.1</td>
+      <td>0.007</td>
       <td>0.90</td>
       <td>-0.64</td>
-      <td>1.01</td>
-      <td>6.9</td>
+      <td>1.02</td>
+      <td>9.4</td>
       <td>0.04</td>
       <td>11.6</td>
-      <td>46.9</td>
+      <td>46.5</td>
     </tr>
     <tr>
       <td>C: Thirds: 1/3 at +1R, 1/3 at target, trail 1/3</td>
-      <td>1313</td>
-      <td>45.5</td>
-      <td>-0.004</td>
+      <td>1319</td>
+      <td>45.6</td>
+      <td>-0.002</td>
       <td>0.78</td>
       <td>-0.66</td>
       <td>0.99</td>
-      <td>-5.2</td>
+      <td>-3.2</td>
       <td>0.04</td>
       <td>11.6</td>
-      <td>46.9</td>
+      <td>46.5</td>
     </tr>
     <tr>
       <td>D: No target: trail all after +1R</td>
-      <td>1313</td>
-      <td>41.2</td>
-      <td>0.024</td>
-      <td>1.19</td>
+      <td>1319</td>
+      <td>41.3</td>
+      <td>0.031</td>
+      <td>1.20</td>
       <td>-0.79</td>
-      <td>1.05</td>
-      <td>31.1</td>
+      <td>1.07</td>
+      <td>40.3</td>
       <td>0.04</td>
       <td>11.6</td>
-      <td>46.9</td>
+      <td>46.5</td>
     </tr>
     <tr>
       <td>E: A + failed-breakout exit only</td>
-      <td>1313</td>
+      <td>1319</td>
       <td>44.7</td>
-      <td>0.006</td>
-      <td>0.87</td>
+      <td>0.008</td>
+      <td>0.88</td>
       <td>-0.70</td>
       <td>1.02</td>
-      <td>7.6</td>
+      <td>10.1</td>
       <td>0.04</td>
       <td>11.6</td>
-      <td>46.9</td>
+      <td>46.5</td>
     </tr>
     <tr>
       <td>F: A + breakeven at +1R only</td>
-      <td>1313</td>
-      <td>44.2</td>
-      <td>0.013</td>
-      <td>0.89</td>
+      <td>1319</td>
+      <td>44.3</td>
+      <td>0.014</td>
+      <td>0.90</td>
       <td>-0.69</td>
-      <td>1.03</td>
-      <td>17.0</td>
+      <td>1.04</td>
+      <td>18.8</td>
       <td>0.04</td>
       <td>11.6</td>
-      <td>46.9</td>
+      <td>46.5</td>
     </tr>
   </tbody>
 </table></div>
@@ -313,42 +327,42 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
   <tbody>
     <tr>
       <td>All trades</td>
-      <td>1313</td>
-      <td>41.2</td>
-      <td>0.024</td>
-      <td>1.19</td>
+      <td>1319</td>
+      <td>41.3</td>
+      <td>0.031</td>
+      <td>1.20</td>
       <td>-0.79</td>
-      <td>1.05</td>
-      <td>31.1</td>
+      <td>1.07</td>
+      <td>40.3</td>
       <td>0.04</td>
       <td>11.6</td>
-      <td>46.9</td>
+      <td>46.5</td>
     </tr>
     <tr>
       <td>Score 70+ and R:R 2+</td>
-      <td>364</td>
-      <td>45.6</td>
-      <td>0.154</td>
-      <td>1.25</td>
+      <td>368</td>
+      <td>45.4</td>
+      <td>0.148</td>
+      <td>1.24</td>
       <td>-0.76</td>
-      <td>1.37</td>
-      <td>56.1</td>
-      <td>0.81</td>
-      <td>18.2</td>
-      <td>17.3</td>
+      <td>1.36</td>
+      <td>54.4</td>
+      <td>0.78</td>
+      <td>18.1</td>
+      <td>17.1</td>
     </tr>
     <tr>
       <td>... and under 4 warnings (current Buy gate)</td>
-      <td>202</td>
-      <td>47.5</td>
-      <td>0.237</td>
+      <td>203</td>
+      <td>47.3</td>
+      <td>0.232</td>
       <td>1.35</td>
       <td>-0.77</td>
-      <td>1.59</td>
-      <td>48.0</td>
-      <td>0.95</td>
+      <td>1.57</td>
+      <td>47.1</td>
+      <td>0.94</td>
       <td>18.2</td>
-      <td>17.8</td>
+      <td>17.7</td>
     </tr>
     <tr>
       <td>Score + R:R 3+ [Murphy ch16, Douglas ch11]</td>
@@ -358,62 +372,62 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
       <td>1.40</td>
       <td>-0.81</td>
       <td>1.25</td>
-      <td>20.3</td>
+      <td>20.2</td>
       <td>1.06</td>
       <td>18.8</td>
       <td>14.9</td>
     </tr>
     <tr>
       <td>Score + R:R, excluding 'Other' [Gann rule 16]</td>
-      <td>352</td>
-      <td>45.5</td>
-      <td>0.159</td>
-      <td>1.26</td>
-      <td>-0.76</td>
-      <td>1.38</td>
-      <td>56.1</td>
-      <td>0.83</td>
-      <td>18.1</td>
-      <td>17.3</td>
-    </tr>
-    <tr>
-      <td>Score + R:R, weekly trend up [Murphy ch10]</td>
-      <td>355</td>
-      <td>45.4</td>
-      <td>0.139</td>
-      <td>1.22</td>
-      <td>-0.76</td>
-      <td>1.33</td>
-      <td>49.3</td>
-      <td>0.76</td>
-      <td>18.0</td>
-      <td>17.2</td>
-    </tr>
-    <tr>
-      <td>Score + R:R, NOT weekly trend up [Murphy ch10]</td>
-      <td>9</td>
-      <td>55.6</td>
-      <td>0.757</td>
-      <td>1.97</td>
-      <td>-0.76</td>
-      <td>3.24</td>
-      <td>6.8</td>
-      <td>2.63</td>
-      <td>26.2</td>
-      <td>22.2</td>
-    </tr>
-    <tr>
-      <td>Score + R:R, new 20-day high [Murphy ch9]</td>
-      <td>364</td>
-      <td>45.6</td>
-      <td>0.154</td>
+      <td>356</td>
+      <td>45.2</td>
+      <td>0.153</td>
       <td>1.25</td>
       <td>-0.76</td>
       <td>1.37</td>
-      <td>56.1</td>
-      <td>0.81</td>
+      <td>54.3</td>
+      <td>0.80</td>
+      <td>18.0</td>
+      <td>17.1</td>
+    </tr>
+    <tr>
+      <td>Score + R:R, weekly trend up [Murphy ch10]</td>
+      <td>357</td>
+      <td>45.4</td>
+      <td>0.138</td>
+      <td>1.22</td>
+      <td>-0.76</td>
+      <td>1.33</td>
+      <td>49.2</td>
+      <td>0.75</td>
+      <td>17.9</td>
+      <td>17.1</td>
+    </tr>
+    <tr>
+      <td>Score + R:R, NOT weekly trend up [Murphy ch10]</td>
+      <td>11</td>
+      <td>45.5</td>
+      <td>0.473</td>
+      <td>1.97</td>
+      <td>-0.77</td>
+      <td>2.12</td>
+      <td>5.2</td>
+      <td>1.80</td>
+      <td>23.1</td>
       <td>18.2</td>
-      <td>17.3</td>
+    </tr>
+    <tr>
+      <td>Score + R:R, new 20-day high [Murphy ch9]</td>
+      <td>368</td>
+      <td>45.4</td>
+      <td>0.148</td>
+      <td>1.24</td>
+      <td>-0.76</td>
+      <td>1.36</td>
+      <td>54.4</td>
+      <td>0.78</td>
+      <td>18.1</td>
+      <td>17.1</td>
     </tr>
     <tr>
       <td>Score + R:R, Bollinger squeeze [Murphy ch9]</td>
@@ -423,62 +437,62 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
       <td>1.25</td>
       <td>-0.84</td>
       <td>1.42</td>
-      <td>15.5</td>
+      <td>15.4</td>
       <td>0.76</td>
       <td>16.6</td>
       <td>18.6</td>
     </tr>
     <tr>
       <td>Score + R:R, NOT Bollinger squeeze [Murphy ch9]</td>
-      <td>278</td>
-      <td>44.6</td>
-      <td>0.146</td>
-      <td>1.25</td>
+      <td>282</td>
+      <td>44.3</td>
+      <td>0.138</td>
+      <td>1.24</td>
       <td>-0.74</td>
-      <td>1.36</td>
-      <td>40.7</td>
-      <td>0.82</td>
-      <td>18.7</td>
-      <td>16.9</td>
+      <td>1.34</td>
+      <td>38.9</td>
+      <td>0.79</td>
+      <td>18.5</td>
+      <td>16.7</td>
     </tr>
     <tr>
       <td>Score + R:R, above Ichimoku cloud [Allemann]</td>
-      <td>364</td>
-      <td>45.6</td>
-      <td>0.154</td>
-      <td>1.25</td>
+      <td>368</td>
+      <td>45.4</td>
+      <td>0.148</td>
+      <td>1.24</td>
       <td>-0.76</td>
-      <td>1.37</td>
-      <td>56.1</td>
-      <td>0.81</td>
-      <td>18.2</td>
-      <td>17.3</td>
+      <td>1.36</td>
+      <td>54.4</td>
+      <td>0.78</td>
+      <td>18.1</td>
+      <td>17.1</td>
     </tr>
     <tr>
       <td>Score + R:R, ADX turning up from &lt;20 [Murphy ch15]</td>
-      <td>84</td>
-      <td>44.0</td>
-      <td>-0.003</td>
-      <td>1.01</td>
-      <td>-0.80</td>
+      <td>86</td>
+      <td>44.2</td>
+      <td>-0.004</td>
       <td>0.99</td>
-      <td>-0.2</td>
+      <td>-0.79</td>
+      <td>0.99</td>
+      <td>-0.4</td>
       <td>0.15</td>
-      <td>17.3</td>
-      <td>15.5</td>
+      <td>17.1</td>
+      <td>15.1</td>
     </tr>
     <tr>
       <td>Score + R:R, NOT ADX turning up from &lt;20 [Murphy ch15]</td>
-      <td>280</td>
-      <td>46.1</td>
-      <td>0.201</td>
+      <td>282</td>
+      <td>45.7</td>
+      <td>0.194</td>
       <td>1.32</td>
       <td>-0.75</td>
-      <td>1.50</td>
-      <td>56.4</td>
-      <td>1.00</td>
+      <td>1.48</td>
+      <td>54.8</td>
+      <td>0.98</td>
       <td>18.4</td>
-      <td>17.9</td>
+      <td>17.7</td>
     </tr>
     <tr>
       <td>Score + R:R, with bearish RSI divergence [Murphy ch10]</td>
@@ -527,16 +541,16 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
     </tr>
     <tr>
       <td>2023</td>
-      <td>40</td>
-      <td>47.5</td>
-      <td>0.451</td>
+      <td>41</td>
+      <td>46.3</td>
+      <td>0.419</td>
       <td>1.63</td>
-      <td>-0.61</td>
-      <td>2.40</td>
-      <td>18.1</td>
-      <td>2.14</td>
-      <td>20.4</td>
-      <td>27.5</td>
+      <td>-0.63</td>
+      <td>2.25</td>
+      <td>17.2</td>
+      <td>2.08</td>
+      <td>20.3</td>
+      <td>26.8</td>
     </tr>
     <tr>
       <td>2024</td>
@@ -547,7 +561,7 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
       <td>-0.77</td>
       <td>2.43</td>
       <td>35.3</td>
-      <td>1.56</td>
+      <td>1.55</td>
       <td>21.4</td>
       <td>16.7</td>
     </tr>
@@ -600,40 +614,40 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
       <td>Bottoming</td>
       <td>375</td>
       <td>52.8</td>
-      <td>-0.011</td>
+      <td>-0.013</td>
       <td>0.62</td>
       <td>-0.72</td>
-      <td>0.97</td>
-      <td>-4.3</td>
-      <td>-0.01</td>
-      <td>8.8</td>
+      <td>0.96</td>
+      <td>-4.8</td>
+      <td>-0.02</td>
+      <td>8.7</td>
       <td>63.5</td>
     </tr>
     <tr>
       <td>Continuation</td>
-      <td>608</td>
-      <td>45.1</td>
-      <td>0.091</td>
+      <td>611</td>
+      <td>45.0</td>
+      <td>0.089</td>
       <td>1.18</td>
       <td>-0.81</td>
-      <td>1.21</td>
-      <td>55.5</td>
-      <td>0.28</td>
+      <td>1.20</td>
+      <td>54.4</td>
+      <td>0.27</td>
       <td>14.6</td>
-      <td>30.1</td>
+      <td>29.3</td>
     </tr>
     <tr>
       <td>Other</td>
-      <td>330</td>
-      <td>44.5</td>
-      <td>-0.081</td>
-      <td>0.67</td>
+      <td>333</td>
+      <td>44.7</td>
+      <td>-0.070</td>
+      <td>0.68</td>
       <td>-0.68</td>
-      <td>0.79</td>
-      <td>-26.7</td>
-      <td>-0.35</td>
+      <td>0.81</td>
+      <td>-23.2</td>
+      <td>-0.31</td>
       <td>9.3</td>
-      <td>59.1</td>
+      <td>58.9</td>
     </tr>
   </tbody>
 </table></div>
@@ -656,29 +670,29 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
   <tbody>
     <tr>
       <td>Ascending triangle</td>
-      <td>494</td>
-      <td>47.0</td>
+      <td>497</td>
+      <td>47.1</td>
       <td>0.124</td>
       <td>1.16</td>
-      <td>-0.79</td>
-      <td>1.30</td>
-      <td>61.5</td>
+      <td>-0.80</td>
+      <td>1.29</td>
+      <td>61.7</td>
       <td>0.41</td>
       <td>15.0</td>
-      <td>32.4</td>
+      <td>31.8</td>
     </tr>
     <tr>
       <td>Ascending triangle off a low</td>
       <td>97</td>
-      <td>54.6</td>
-      <td>-0.104</td>
+      <td>53.6</td>
+      <td>-0.122</td>
       <td>0.49</td>
-      <td>-0.82</td>
-      <td>0.72</td>
-      <td>-10.1</td>
-      <td>-0.26</td>
-      <td>8.7</td>
-      <td>62.9</td>
+      <td>-0.83</td>
+      <td>0.68</td>
+      <td>-11.8</td>
+      <td>-0.33</td>
+      <td>8.3</td>
+      <td>61.9</td>
     </tr>
     <tr>
       <td>Bull flag</td>
@@ -709,28 +723,28 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
     <tr>
       <td>Flat base after drop -&gt; breakout</td>
       <td>124</td>
-      <td>48.4</td>
-      <td>-0.012</td>
-      <td>0.70</td>
+      <td>49.2</td>
+      <td>-0.002</td>
+      <td>0.69</td>
       <td>-0.68</td>
-      <td>0.97</td>
-      <td>-1.4</td>
-      <td>-0.02</td>
+      <td>0.99</td>
+      <td>-0.3</td>
+      <td>-0.01</td>
       <td>8.5</td>
-      <td>62.1</td>
+      <td>62.9</td>
     </tr>
     <tr>
       <td>Flat-top breakout</td>
-      <td>429</td>
-      <td>43.4</td>
-      <td>-0.062</td>
-      <td>0.81</td>
+      <td>432</td>
+      <td>43.3</td>
+      <td>-0.056</td>
+      <td>0.82</td>
       <td>-0.73</td>
-      <td>0.85</td>
-      <td>-26.4</td>
-      <td>-0.27</td>
+      <td>0.86</td>
+      <td>-24.2</td>
+      <td>-0.25</td>
       <td>10.1</td>
-      <td>50.1</td>
+      <td>49.5</td>
     </tr>
     <tr>
       <td>Rounded bottom -&gt; breakout</td>
@@ -766,42 +780,42 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
   <tbody>
     <tr>
       <td>1.5-2x</td>
-      <td>868</td>
-      <td>45.7</td>
-      <td>0.003</td>
+      <td>870</td>
+      <td>45.9</td>
+      <td>0.004</td>
       <td>0.90</td>
       <td>-0.75</td>
       <td>1.01</td>
-      <td>2.7</td>
+      <td>3.4</td>
       <td>-0.03</td>
-      <td>11.3</td>
-      <td>46.5</td>
+      <td>11.2</td>
+      <td>46.1</td>
     </tr>
     <tr>
       <td>2-3x</td>
-      <td>354</td>
-      <td>49.7</td>
-      <td>0.037</td>
-      <td>0.82</td>
+      <td>357</td>
+      <td>49.3</td>
+      <td>0.033</td>
+      <td>0.83</td>
       <td>-0.74</td>
-      <td>1.10</td>
-      <td>12.9</td>
-      <td>0.15</td>
-      <td>12.3</td>
-      <td>48.0</td>
+      <td>1.09</td>
+      <td>11.8</td>
+      <td>0.13</td>
+      <td>12.2</td>
+      <td>47.3</td>
     </tr>
     <tr>
       <td>3x+</td>
-      <td>91</td>
-      <td>50.5</td>
-      <td>0.098</td>
-      <td>0.94</td>
+      <td>92</td>
+      <td>51.1</td>
+      <td>0.121</td>
+      <td>0.97</td>
       <td>-0.77</td>
-      <td>1.26</td>
-      <td>8.9</td>
-      <td>0.32</td>
-      <td>12.2</td>
-      <td>46.2</td>
+      <td>1.32</td>
+      <td>11.2</td>
+      <td>0.38</td>
+      <td>12.1</td>
+      <td>46.7</td>
     </tr>
   </tbody>
 </table></div>
@@ -826,27 +840,27 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
       <td>Under 2</td>
       <td>796</td>
       <td>48.4</td>
-      <td>-0.056</td>
-      <td>0.58</td>
+      <td>-0.053</td>
+      <td>0.59</td>
       <td>-0.66</td>
-      <td>0.83</td>
-      <td>-44.6</td>
-      <td>-0.23</td>
+      <td>0.84</td>
+      <td>-42.2</td>
+      <td>-0.22</td>
       <td>8.3</td>
-      <td>66.5</td>
+      <td>66.1</td>
     </tr>
     <tr>
       <td>2+</td>
-      <td>517</td>
+      <td>523</td>
       <td>45.3</td>
-      <td>0.134</td>
-      <td>1.37</td>
-      <td>-0.89</td>
-      <td>1.28</td>
-      <td>69.2</td>
-      <td>0.46</td>
-      <td>16.7</td>
-      <td>16.8</td>
+      <td>0.131</td>
+      <td>1.35</td>
+      <td>-0.88</td>
+      <td>1.27</td>
+      <td>68.5</td>
+      <td>0.44</td>
+      <td>16.5</td>
+      <td>16.6</td>
     </tr>
   </tbody>
 </table></div>
@@ -895,16 +909,16 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
     </tr>
     <tr>
       <td>3+</td>
-      <td>1167</td>
-      <td>47.0</td>
-      <td>0.016</td>
-      <td>0.85</td>
+      <td>1173</td>
+      <td>47.1</td>
+      <td>0.017</td>
+      <td>0.86</td>
       <td>-0.73</td>
       <td>1.04</td>
-      <td>18.3</td>
+      <td>20.2</td>
       <td>0.05</td>
       <td>11.1</td>
-      <td>50.1</td>
+      <td>49.6</td>
     </tr>
   </tbody>
 </table></div>
@@ -927,29 +941,29 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
   <tbody>
     <tr>
       <td>US</td>
-      <td>1141</td>
-      <td>47.5</td>
-      <td>0.033</td>
+      <td>1145</td>
+      <td>47.4</td>
+      <td>0.032</td>
       <td>0.90</td>
       <td>-0.75</td>
       <td>1.08</td>
-      <td>38.0</td>
-      <td>0.10</td>
+      <td>36.5</td>
+      <td>0.09</td>
       <td>11.5</td>
-      <td>47.5</td>
+      <td>46.9</td>
     </tr>
     <tr>
       <td>Canada</td>
-      <td>172</td>
-      <td>44.8</td>
-      <td>-0.078</td>
-      <td>0.77</td>
+      <td>174</td>
+      <td>45.4</td>
+      <td>-0.058</td>
+      <td>0.79</td>
       <td>-0.76</td>
-      <td>0.81</td>
-      <td>-13.5</td>
-      <td>-0.32</td>
-      <td>12.2</td>
-      <td>43.0</td>
+      <td>0.86</td>
+      <td>-10.1</td>
+      <td>-0.27</td>
+      <td>12.1</td>
+      <td>43.7</td>
     </tr>
   </tbody>
 </table></div>
