@@ -154,8 +154,10 @@ nav button svg{width:22px;height:22px}nav button.on{color:var(--accent)}
     if (!s) { el.innerHTML = '<h2>Breakout setups</h2><p class="muted">Appears after the next evening scan (' + nextScan() + ').</p>'; return; }
     const rows = (s.items || []).map(x => `<details><summary class="row"><span class="l"><span class="tk">${esc(x.t)}</span>
         <div class="nm">${esc(x.name || x.industry || '')}</div></span>
-        <span class="r"><span class="badge" style="background:${esc(x.color)}">${esc(x.status)}</span>${x.score != null ? `<div class="muted">score ${x.score}</div>` : ''}</span></summary>
-        <p class="note">${esc(x.note)}${x.industry ? ' <span class="muted">(' + esc(x.industry) + ')</span>' : ''}</p></details>`).join('');
+        <span class="r"><span class="badge" style="background:${esc(x.today && x.today.date === todayISO() ? x.today.color : x.color)}">${esc(x.today && x.today.date === todayISO() ? x.today.label : x.status)}</span>${x.score != null ? `<div class="muted">score ${x.score}</div>` : ''}</span></summary>
+        ${x.today && x.today.date === todayISO()
+          ? `<p class="note"><span class="badge" style="background:${esc(x.today.color)}">${esc(x.today.label)}</span> <b>Today ${esc(x.today.time)}:</b> ${esc(x.today.text)}</p>`
+          : `<p class="note">${esc(x.note)}${x.industry ? ' <span class="muted">(' + esc(x.industry) + ')</span>' : ''}</p>`}</details>`).join('');
     el.innerHTML = `<h2>Breakout setups</h2>${whenLabel('close', s.session)}
       <p class="muted" style="margin:4px 0 6px">Next scan: ${nextScan()}. Tap a stock for what to do.</p>${rows || '<p class="muted">No setups in the last scan.</p>'}
       ${s.radar_total ? `<p class="muted" style="margin-top:8px">${s.radar_total} more are close to breaking out ("on the radar"); see the evening report.</p>` : ''}`;

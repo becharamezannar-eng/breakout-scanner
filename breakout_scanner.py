@@ -2045,10 +2045,20 @@ def _size_line(r):
 
 def instruction(r):
     st, R = r["Status"], r["Resistance"]
+    if st == "BUY" and LIVE["on"]:             # market open: the price is known, so give the orders directly
+        hi = R * (1 + TRADE["buy_zone"])
+        p = _num(r.get("LastClose"))
+        orders = (f"limit order up to <b>{_f(hi)}</b>, stop order <b>{_f(r['Stop'])}</b>, target <b>{_f(r['Target'])}</b>."
+                  + _size_line(r))
+        if np.isfinite(p) and p > hi:
+            return f"Now {_f(p)}, above the buy zone ({_f(R)}-{_f(hi)}). Don't chase; buy only if it dips back: {orders}"
+        if np.isfinite(p) and p < R:
+            return f"Now {_f(p)}, back below the breakout level {_f(R)}. Don't buy today: the breakout is failing."
+        return f"Now {_f(p)}, inside the buy zone. Buy: {orders}"
     if st == "BUY":
         hi = R * (1 + TRADE["buy_zone"])
-        return (f"Buy at tomorrow's open if it opens between <b>{_f(R)}</b> and <b>{_f(hi)}</b> "
-                f"and trades above the day's VWAP (see the morning check). Skip if it gaps above {_f(hi)} or opens below {_f(R)}. "
+        return (f"Buy tomorrow if it opens between <b>{_f(R)}</b> and <b>{_f(hi)}</b> and trades above the day's VWAP. "
+                f"The morning check (about 10:15-11 am) replaces this line with a plain buy / wait / don't-buy based on the open. "
                 f"Place a stop order at <b>{_f(r['Stop'])}</b> ({_pct(r['Stop'], r['EntryPrice'])}); "
                 f"target <b>{_f(r['Target'])}</b> ({_pct(r['Target'], r['EntryPrice'])}), reward:risk {_f(_num(r.get('RR')), 1)}."
                 + _size_line(r))
@@ -2541,6 +2551,10 @@ def intraday_stats(d):
     )
 
 
+VERDICT_LABEL = {"ENTER": "Buy now", "WAIT": "Wait", "SKIP": "Don't buy today", "FAILING": "Failing", "HOLDING": "Holding",
+                 "OK": "OK", "STOPPED": "Stopped out", "NO DATA": "No data"}
+
+
 def morning_verdict(r, x):
     R = float(r["Resistance"])
     top = R * (1 + TRADE["buy_zone"])
@@ -2558,22 +2572,29 @@ def morning_verdict(r, x):
         if p < R * (1 - CFG["hold_tol"]) or x["low"] < R * (1 - CFG["hold_tol"]):
             return "FAILING", "#b42318", f"Has traded below {_f(R * (1 - CFG['hold_tol']))} - the breakout is failing; likely a Drop tonight."
         return "HOLDING", "#1d5fbf", f"Holding above the breakout level so far ({'above' if p >= v else 'below'} VWAP, {tv_txt}). Decision comes at the close."
-    # BUY and EXTENDED: is there a valid entry right now?
+    # BUY and EXTENDED: is there a valid entry right now? Every answer states the open and the full orders.
+    stop, tgt = _num(r.get("Stop")), _num(r.get("Target"))
+    orders = (f"Limit order up to <b>{_f(top)}</b>, stop order <b>{_f(stop)}</b>, target <b>{_f(tgt)}</b>.")
+    opened = f"Opened at {_f(x['open'])}, now {_f(p)}."
     if p < R * (1 - CFG["hold_tol"]):
-        return "SKIP", "#b42318", f"Lost the breakout level ({_f(R)}). Don't enter."
+        return "SKIP", "#b42318", f"{opened} It is back below the breakout level ({_f(R)}), so the breakout is failing."
     if x["open"] > top and p > top:
-        return "SKIP", "#a15c00", f"Gapped above the buy zone (opened {_f(x['open'])}, zone tops at {_f(top)}). Don't chase."
+        return "SKIP", "#a15c00", (f"{opened} It opened above the buy zone (top {_f(top)}). Don't chase; "
+                                   f"tonight's scan will say if it comes back into the zone.")
     if p > top:
-        return "WAIT", "#a15c00", f"Trading above the buy zone ({_f(top)}). Wait for a pullback into {_f(R)}-{_f(top)}."
+        return "WAIT", "#a15c00", f"{opened} Don't buy at this price: it's above the buy zone. Buy only if it dips back: {orders}"
     if p < v:
-        return "WAIT", "#a15c00", f"Below VWAP ({_f(v)}). Enter only if it reclaims VWAP and holds."
+        return "WAIT", "#a15c00", (f"{opened} It's below today's average price (VWAP {_f(v)}). Buy only if it climbs "
+                                   f"back above {_f(v)}: {orders}")
     if x["vwap_slope"] < 0:
-        return "WAIT", "#a15c00", f"Above VWAP ({_f(v)}) but VWAP is still falling. Wait for it to flatten or turn up."
+        return "WAIT", "#a15c00", (f"{opened} Today's average price (VWAP {_f(v)}) is still falling. Buy when it "
+                                   f"flattens or turns up: {orders}")
     if np.isfinite(tv) and tv < 1.0:
-        return "WAIT", "#a15c00", f"Light volume so far ({tv_txt}). Breakouts without volume often fail."
+        return "WAIT", "#a15c00", (f"{opened} Light volume so far ({tv_txt}); breakouts without volume often fail. "
+                                   f"Buy if volume picks up: {orders}")
     if st == "EXTENDED":
-        return "ENTER", "#16794a", f"Pulled back into the buy zone and is above a rising VWAP on {tv_txt}. Retest entry is valid."
-    return "ENTER", "#16794a", f"Inside the buy zone, above a rising VWAP ({_f(v)}), {tv_txt}. Entry is valid; stop {_f(_num(r.get('Stop')))}."
+        return "ENTER", "#16794a", f"{opened} It pulled back into the buy zone and is holding, on {tv_txt}. {orders}"
+    return "ENTER", "#16794a", f"{opened} Inside the buy zone, above a rising VWAP, on {tv_txt}. {orders}"
 
 
 def morning_check(outdir, force=False):
@@ -2624,7 +2645,7 @@ def morning_check(outdir, force=False):
                 ("Gap at open", f"{gap:+.1f}%" if np.isfinite(gap) else "-")])
         label = STATUS_INFO.get(r["Status"], (r["Status"],))[0]
         cards.append(f'<article class="card" style="--c:{color}"><header><h3>{r["Ticker"]} '
-                     f'<small class="hint">{label} from last night</small></h3><span class="badge">{verdict}</span></header>'
+                     f'<small class="hint">{label} from last night</small></h3><span class="badge">{VERDICT_LABEL.get(verdict, verdict)}</span></header>'
                      f'{company_html(r["Ticker"], full=False)}<p>{text}</p><div class="facts">{facts}</div></article>')
     stamp = items[0][2]["time"] if items and items[0][2] else now.strftime("%H:%M ET")
     last = _last_full_scan(outdir)
@@ -2858,7 +2879,7 @@ def inject_morning_summary(outdir, items, stamp, now):
     if items:
         lines = "".join(
             f'<li><b>{r["Ticker"]}</b> <span style="background:{color};color:#fff;font-size:11px;font-weight:700;'
-            f'padding:2px 7px;border-radius:6px">{verdict}</span> {text}</li>'
+            f'padding:2px 7px;border-radius:6px">{VERDICT_LABEL.get(verdict, verdict)}</span> {text}</li>'
             for _, r, x, (verdict, color, text) in items)
         body = f'<ul style="list-style:none;padding:0;margin:6px 0 0;font-size:14px">{lines}</ul>'
     else:
@@ -2871,11 +2892,29 @@ def inject_morning_summary(outdir, items, stamp, now):
              f'<a href="live.html">Live report</a> &middot; the rest of this page is the full scan from the close of '
              f'{_last_full_scan(outdir) or dt.date.today():%a %b %d}; the next one runs after today\'s close.</p>'
              f'</section><!--/MORNING-->')
+    try:                                                            # phone app: today's verdict on each setup
+        import json
+        sp = os.path.join(outdir, "setups.json")
+        sj = json.load(open(sp))
+        v = {r["Ticker"]: (VERDICT_LABEL.get(vd, vd), c, _plain(tx)) for _, r, x, (vd, c, tx) in items}
+        for it in sj.get("items", []):
+            it.pop("today", None)
+            if it["t"] in v:
+                it["today"] = dict(label=v[it["t"]][0], color=v[it["t"]][1], text=v[it["t"]][2], time=stamp,
+                                   date=now.date().isoformat())
+        json.dump(sj, open(sp, "w"))
+    except Exception:
+        pass
     for name in (scans[-1], "live.html"):
         path = os.path.join(outdir, name)
         if not os.path.exists(path):
             continue
         page = open(path, encoding="utf-8").read()
+        for _, r, x, (verdict, color, text) in items:              # the card's own instruction -> today's
+            page = re.sub(rf'(<article class="card" id="t-{re.escape(r["Ticker"])}".*?<p class="do">).*?(</p>)',
+                          lambda m: (m.group(1) + f'<b style="color:{color}">Morning check {stamp} - '
+                                     f'{VERDICT_LABEL.get(verdict, verdict)}:</b> {text}' + m.group(2)),
+                          page, count=1, flags=re.S)
         if "<!--MORNING-->" in page:
             page = re.sub(r"<!--MORNING-->.*?<!--/MORNING-->", lambda m: block, page, flags=re.S)
         elif '<section class="review">' in page:
