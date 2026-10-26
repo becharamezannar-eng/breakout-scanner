@@ -72,8 +72,8 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
   };
   window.runNow = async (mode, ticker) => {
     const t = get();
-    if (!t) { window.open(`https://github.com/${owner}/${repo}/actions/workflows/scan.yml`, '_blank');
-      st.innerHTML = 'On GitHub: tap <b>Run workflow</b>, pick <b>' + mode + '</b>' + (ticker ? ', type <b>' + ticker + '</b>' : '') + ', then <b>Run workflow</b>. Or set up one-tap runs with &#9881;.'; return; }
+    if (!t) { document.getElementById('runsetup').style.display = 'block';
+      st.textContent = 'This device needs your GitHub key once (steps below). After that this button works with one tap.'; return; }
     document.querySelectorAll('.runbar button, .lookbar button').forEach(b => b.disabled = true);
     const started = new Date();
     st.textContent = 'Starting ' + (ticker ? 'lookup of ' + ticker : mode) + '...';
@@ -97,7 +97,7 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
           const ny = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
           const mins = ny.getHours() * 60 + ny.getMinutes();
           const open = ny.getDay() > 0 && ny.getDay() < 6 && mins >= 570 && mins < 960;
-          const page = ticker ? 'lookup/' + ticker + '.html' : mode === 'morning' ? 'morning.html' : (open ? 'live.html' : 'index.html');
+          const page = mode === 'esg_lookup' ? 'esg/lookup/' + ticker + '.html' : mode === 'esg' ? 'esg/index.html' : ticker ? 'lookup/' + ticker + '.html' : mode === 'morning' ? 'morning.html' : (open ? 'live.html' : 'index.html');
           setTimeout(() => { location.href = base + page + '?t=' + Date.now(); }, 25000);
         } else { st.innerHTML = 'The run ended with "' + run.conclusion + '". <a href="' + run.html_url + '" target="_blank">See details</a>.'; }
         break;
@@ -107,4 +107,4 @@ th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;white-
   };
 })();
 </script>
-<h1>Past lookups</h1><ul class="gl"><li><a href="SHOP.TO.html">SHOP.TO</a> <small class="hint">Oct 18 22:34</small></li><li><a href="VEE.html">VEE</a> <small class="hint">Oct 18 22:33</small></li><li><a href="VEE.TO.html">VEE.TO</a> <small class="hint">Oct 18 22:33</small></li></ul></main></body></html>
+<h1>Past lookups</h1><ul class="gl"><li><a href="MEDP.html">MEDP</a> <small class="hint">Oct 26 14:29</small></li><li><a href="VEE.html">VEE</a> <small class="hint">Oct 26 14:29</small></li><li><a href="VEE.TO.html">VEE.TO</a> <small class="hint">Oct 26 14:29</small></li><li><a href="SHOP.TO.html">SHOP.TO</a> <small class="hint">Oct 26 14:29</small></li></ul></main></body></html>
