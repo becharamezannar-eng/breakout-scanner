@@ -100,8 +100,8 @@ CFG = dict(
 
 # Position sizing - set these to your own account
 ACCOUNT = dict(
-    size=25_000,              # account value
-    risk_pct=0.01,            # risk per trade (1% = $250 on $25k)
+    size=15_500,              # account value (TFSA, about $15.5k CAD as of Oct 2026)
+    risk_pct=0.01,            # risk per trade (1% = $155 on $15.5k)
     max_position_pct=0.25,    # never put more than 25% of the account in one stock
 )
 
