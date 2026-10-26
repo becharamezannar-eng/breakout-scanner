@@ -66,7 +66,7 @@ warnings.filterwarnings("ignore")
 CFG = dict(
     min_price=5.0,            # skip penny stocks
     min_dollar_vol=5e6,       # avg 50-day $ volume (day-trading liquidity)
-    min_dollar_vol_ca=3e6,    # TSX floor in CAD: Canadian names trade less, and Canada is the priority market
+    min_dollar_vol_ca=3e6, live_min_coverage=0.8,    # TSX floor in CAD: Canadian names trade less, and Canada is the priority market
     catchup_days=3,           # also catch breakouts up to 3 sessions old that were missed (if they held every day)
     radar_dist=0.03,          # "On the radar": close within 3% under a flat resistance, not broken out yet
     radar_max=25,             # radar names kept per market (Canada and US separately)
@@ -2677,6 +2677,46 @@ US quotes are near real-time; TSX quotes can be delayed about 15 minutes. Re-che
     return 0
 
 
+def prep_live(d, frac, today):
+    """Live/morning data prep: today's unfinished volume is projected to a full day.
+    Guards two failures seen in production: duplicated bars and whole-number (int64) volume."""
+    d = d[~d.index.duplicated(keep="last")].copy()
+    d["Volume"] = d["Volume"].astype(float)
+    if len(d) and pd.Timestamp(d.index[-1]).date() == today:
+        d.iloc[-1, d.columns.get_loc("Volume")] = d["Volume"].iloc[-1] / frac
+    return prep(d)
+
+
+def live_new_setups(res, prev):
+    """New setups for the live report: not already open in the tracker, and never a setup the tracker already
+    closed (same ticker and breakout date) - the evening scan's rule, which the live report must follow too."""
+    if not len(res):
+        return res
+    open_ = {r["Ticker"] for r in prev if not r["Closed"]}
+    closed = {(r["Ticker"], str(r["BreakoutDate"])) for r in prev if r["Closed"]}
+    bds = res["BreakoutDate"] if "BreakoutDate" in res else pd.Series([""] * len(res), index=res.index)
+    keep = [t not in open_ and (t, str(bd)) not in closed for t, bd in zip(res["Ticker"], bds)]
+    return res[keep]
+
+
+def live_guard(rows, prev):
+    """Last check before anything is shown as a Buy: drop any row whose setup the tracker already closed."""
+    closed = {(r["Ticker"], str(r["BreakoutDate"])) for r in prev if r["Closed"]}
+    out = []
+    for r in rows:
+        if not r["Closed"] and (r["Ticker"], str(r["BreakoutDate"])) in closed:
+            DIAG.append(f"Live guard removed {r['Ticker']}: its {r['BreakoutDate']} setup was already closed")
+            continue
+        out.append(r)
+    return out
+
+
+def live_coverage(data, tickers, today):
+    """How many scanned stocks have a bar for today (a live report on yesterday's prices must say so)."""
+    have = sum(1 for t in tickers if t in data and len(data[t]) and pd.Timestamp(data[t].index[-1]).date() == today)
+    return have, sum(1 for t in tickers if t in data)
+
+
 BRIEF_INDEXES = [("^GSPC", "S&P 500"), ("^IXIC", "Nasdaq"), ("^DJI", "Dow"), ("^RUT", "Russell 2000"),
                  ("^GSPTSE", "S&P/TSX")]
 
@@ -3278,6 +3318,98 @@ def _tracker_selftest():
     return ok
 
 
+def _live_selftest():
+    """Regression tests for the live / morning errors found on Oct 19-26, 2026. Each must stay fixed."""
+    import tempfile
+    ok = True
+
+    def check(name, cond, detail=""):
+        nonlocal ok
+        ok &= bool(cond)
+        print(f"live    : {name:<52} " + ("ok" if cond else f"FAILED {detail}"))
+    today = dt.date(2026, 10, 26)
+    base = _synthetic("uptrend")
+    base.index = pd.bdate_range(end=today, periods=len(base))
+    # 1. whole-number volume + a duplicated bar must not break the live prep (dropped 4,455 stocks on Oct 19)
+    d = pd.concat([base, base.iloc[[-1]]])
+    d["Volume"] = d["Volume"].round().astype("int64")
+    try:
+        x = prep_live(d, 0.4, today)
+        check("int64 volume and duplicate bar prepped", len(x) == len(base)
+              and abs(x["Volume"].iloc[-1] - d["Volume"].iloc[-1] / 0.4) < 1, x["Volume"].iloc[-1])
+    except Exception as e:
+        check("int64 volume and duplicate bar prepped", False, f"{type(e).__name__}: {e}")
+    # 2. a setup the tracker already closed must never come back as a live Buy (UCB, Oct 26)
+    prev = [dict(Ticker="UCB", BreakoutDate="2026-10-22", Closed=True, Status="DROP"),
+            dict(Ticker="OPEN", BreakoutDate="2026-10-20", Closed=False, Status="HOLD")]
+    res = pd.DataFrame(dict(Ticker=["UCB", "UCB2", "OPEN", "NEW"],
+                            BreakoutDate=["2026-10-22", "2026-10-22", "2026-10-26", "2026-10-26"]))
+    kept = list(live_new_setups(res, prev)["Ticker"])
+    check("closed setup not revived (UCB)", kept == ["UCB2", "NEW"], kept)
+    res2 = pd.DataFrame(dict(Ticker=["UCB"], BreakoutDate=["2026-10-26"]))
+    check("a NEW breakout of a dropped stock is allowed", list(live_new_setups(res2, prev)["Ticker"]) == ["UCB"])
+    rows = [dict(Ticker="UCB", BreakoutDate="2026-10-22", Closed=False, Status="BUY"),
+            dict(Ticker="OK", BreakoutDate="2026-10-23", Closed=False, Status="BUY")]
+    check("live guard removes a revived Buy", [r["Ticker"] for r in live_guard(rows, prev)] == ["OK"])
+    # 3. once the market is open, instructions give the price and the orders - no "tomorrow", no "gaps above"
+    R, stop, tgt = 36.78, 36.09, 40.92
+    r = dict(Ticker="TST", Status="BUY", Resistance=R, Stop=stop, Target=tgt, EntryPrice=37.2, RR=2.0,
+             Shares=100, RiskPerShare=1.1, Source="")
+    saved = LIVE["on"]
+    LIVE["on"] = True
+    try:
+        for p, want in [(37.4, "Buy:"), (38.9, "Don't chase"), (36.5, "Don't buy today")]:
+            txt = re.sub("<[^>]+>", "", instruction(dict(r, LastClose=p)))
+            bad = [w for w in ("tomorrow", "gaps above", "opens below", "Skip if") if w.lower() in txt.lower()]
+            check(f"live instruction at {p}: '{want}'", want in txt and not bad and txt.startswith(f"Now {p:.2f}"),
+                  txt[:120])
+        inside = re.sub("<[^>]+>", "", instruction(dict(r, LastClose=37.4)))
+        check("live Buy states limit, stop and target", all(s in inside for s in ("38.25", "36.09", "40.92")), inside)
+    finally:
+        LIVE["on"] = saved
+    # 4. morning verdicts: state the open; "Buy now" only inside the zone; Buy/Wait carry the orders
+    top = R * (1 + TRADE["buy_zone"])
+    base_x = dict(vwap_slope=0.1, trvol=1.4, prev_close=R)
+    cases = [("inside zone", dict(open=37.0, price=37.3, vwap=37.1, low=36.9), "ENTER"),
+             ("gapped above", dict(open=top * 1.02, price=top * 1.03, vwap=top * 1.02, low=top * 1.01), "SKIP"),
+             ("above zone", dict(open=37.5, price=top * 1.01, vwap=37.8, low=37.4), "WAIT"),
+             ("lost the level", dict(open=36.9, price=36.2, vwap=36.6, low=36.1), "SKIP"),
+             ("below VWAP", dict(open=37.0, price=37.05, vwap=37.2, low=36.95), "WAIT")]
+    for name, xx, want in cases:
+        v, _, text = morning_verdict(r, dict(base_x, **xx))
+        t = re.sub("<[^>]+>", "", text)
+        good = v == want and t.startswith("Opened at") and "gaps above" not in t
+        if v in ("ENTER", "WAIT") and name != "lost the level":
+            good &= all(s in t for s in (_f(top), _f(stop), _f(tgt)))
+        if v == "ENTER":
+            good &= R <= xx["price"] <= top
+        check(f"morning: {name} -> {VERDICT_LABEL[want]}", good, f"{v}: {t[:110]}")
+    # 5. the size line shows the real % at risk and says when the per-stock cap cut the size
+    sl = re.sub("<[^>]+>", "", _size_line(dict(r, Shares=104, RiskPerShare=1.10, EntryPrice=37.19)))
+    pct_ = 104 * 1.10 / ACCOUNT["size"] * 100
+    check("size line shows the real % at risk", f"{pct_:.1f}%" in sl and "capped" in sl, sl)
+    # 6. the morning verdict replaces the card's own instruction on the evening report, and reaches the app
+    with tempfile.TemporaryDirectory() as td:
+        open(os.path.join(td, "breakouts_2026-10-23.html"), "w").write(
+            '<section class="review">x</section><article class="card" id="t-TST" style="--c:#000"><p class="do">'
+            'Buy tomorrow if it opens between 36.78 and 38.25. Skip if it gaps above 38.25.</p></article>')
+        import json
+        json.dump(dict(items=[dict(t="TST", status="Buy")]), open(os.path.join(td, "setups.json"), "w"))
+        xx = dict(base_x, open=37.0, price=37.3, vwap=37.1, low=36.9)
+        inject_morning_summary(td, [(0, r, xx, morning_verdict(r, xx))], "10:46 ET", dt.datetime.now(ET))
+        page = open(os.path.join(td, "breakouts_2026-10-23.html")).read()
+        card = re.search(r'id="t-TST".*?<p class="do">(.*?)</p>', page, re.S).group(1)
+        check("evening card shows the morning orders", "Opened at" in card and "Skip if" not in card, card[:100])
+        app = json.load(open(os.path.join(td, "setups.json")))["items"][0].get("today") or {}
+        check("app setups get today's verdict", app.get("label") == "Buy now" and "Opened at" in app.get("text", ""))
+    # 7. coverage: a live report on mostly-stale prices is detected
+    stale = {f"S{i}": base.iloc[:-1] for i in range(8)}
+    stale.update({f"F{i}": base for i in range(2)})
+    have, total = live_coverage(stale, list(stale), today)
+    check("stale live data detected (2 of 10 fresh)", (have, total) == (2, 10) and have / total < CFG["live_min_coverage"])
+    return ok
+
+
 def selftest():
     ok = True
     for kind in ["bottom", "uptrend"]:
@@ -3314,6 +3446,7 @@ def selftest():
                           else f"FAILED (held {r and r.get('LateDays')}, slipped found={not good2})"))
     ok &= good and good2
     ok &= _tracker_selftest()
+    ok &= _live_selftest()
     print("SELFTEST", "PASSED" if ok else "FAILED")
     return ok
 
@@ -3377,11 +3510,7 @@ def main():
         d0 = d
         try:
             if LIVE["on"]:
-                d = d[~d.index.duplicated(keep="last")].copy()     # Yahoo can send today's bar twice
-                d["Volume"] = d["Volume"].astype(float)           # whole-number volume can't take the projection
-                if len(d) and pd.Timestamp(d.index[-1]).date() == today:
-                    d.iloc[-1, d.columns.get_loc("Volume")] = d["Volume"].iloc[-1] / frac
-                data[t] = prep(d)
+                data[t] = prep_live(d, frac, today)
             else:
                 data[t] = prep(drop_live_bar(d))
         except Exception as e:
@@ -3466,15 +3595,9 @@ def main():
         now = dt.datetime.now(ET)
         prev = load_tracker(tracker_path)
         prev_open = {r["Ticker"] for r in prev if not r["Closed"]}
-        closed = {(r["Ticker"], str(r["BreakoutDate"])) for r in prev if r["Closed"]}   # same rule as the evening scan:
-        if len(res):                                                                     # a setup already closed (e.g.
-            keep = [t not in prev_open and (t, str(bd)) not in closed                     # dropped) is not revived
-                    for t, bd in zip(res["Ticker"], res.get("BreakoutDate", pd.Series([""] * len(res))))]
-            res_new = res[keep]
-        else:
-            res_new = res
-        live_rows = update_tracker([], res_new, data, asof)
+        live_rows = update_tracker([], live_new_setups(res, prev), data, asof)
         live_rows += [r for r in prev if not r["Closed"]]
+        live_rows = live_guard(live_rows, prev)
         try:
             review = market_review(data, tickers, n_setups=len(found), live=True, ctx=ctx)
         except Exception as e:
@@ -3482,6 +3605,11 @@ def main():
             DIAG.append(f"Market review failed: {str(e)[:120]}")
         sub = (f"<b>Live preview</b>, prices as of {now:%H:%M} ET ({frac * 100:.0f}% of a normal day's volume traded); "
                "today's volume is projected to a full day. Nothing here is final until the close")
+        have, total = live_coverage(data, tickers, dt.datetime.now(ET).date())
+        if total and have / total < CFG["live_min_coverage"]:
+            sub += (f'. <b style="color:#b42318">WARNING: only {have:,} of {total:,} stocks have today\'s prices, so this '
+                    f'report is incomplete. Do not act on it; wait for the next morning check or tonight\'s scan.</b>')
+            DIAG.append(f"Live data incomplete: {have}/{total} stocks have today's bar")
         write_html(os.path.join(a.outdir, "live.html"), asof, live_rows, res, data, market_context(data), len(data),
                    review, title="Live preview", subtitle=sub, radar=radar)
         print(f"Live preview: {len(res)} setups in progress -> {os.path.join(a.outdir, 'live.html')}")
