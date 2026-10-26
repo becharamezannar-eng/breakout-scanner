@@ -2039,8 +2039,11 @@ def _size_line(r):
     if r.get("Source") == "manual":
         return (f" Your position: <b>{f'{sh:,.4f}'.rstrip('0').rstrip('.')} shares at {_f(r['EntryPrice'])}</b> "
                 f"(${sh * r['EntryPrice']:,.0f}; risking ${sh * rps:,.0f} to the original stop).")
-    return (f" Size: <b>{int(sh)} shares</b> (risking {_f(rps)}/share = ${sh * rps:,.0f}, "
-            f"{ACCOUNT['risk_pct'] * 100:.1f}% of a ${ACCOUNT['size']:,} account).")
+    risk = sh * rps
+    capped = risk < ACCOUNT["size"] * ACCOUNT["risk_pct"] * 0.95
+    return (f" Size: <b>{int(sh)} shares</b> (about ${sh * _num(r.get('EntryPrice') or r.get('LastClose')):,.0f}; risking "
+            f"{_f(rps)}/share = ${risk:,.0f}, {risk / ACCOUNT['size'] * 100:.1f}% of your ${ACCOUNT['size']:,} account"
+            + (f"; capped at {ACCOUNT['max_position_pct'] * 100:.0f}% of the account in one stock" if capped else "") + ").")
 
 
 def instruction(r):
@@ -3463,7 +3466,14 @@ def main():
         now = dt.datetime.now(ET)
         prev = load_tracker(tracker_path)
         prev_open = {r["Ticker"] for r in prev if not r["Closed"]}
-        live_rows = update_tracker([], res[~res["Ticker"].isin(prev_open)] if len(res) else res, data, asof)
+        closed = {(r["Ticker"], str(r["BreakoutDate"])) for r in prev if r["Closed"]}   # same rule as the evening scan:
+        if len(res):                                                                     # a setup already closed (e.g.
+            keep = [t not in prev_open and (t, str(bd)) not in closed                     # dropped) is not revived
+                    for t, bd in zip(res["Ticker"], res.get("BreakoutDate", pd.Series([""] * len(res))))]
+            res_new = res[keep]
+        else:
+            res_new = res
+        live_rows = update_tracker([], res_new, data, asof)
         live_rows += [r for r in prev if not r["Closed"]]
         try:
             review = market_review(data, tickers, n_setups=len(found), live=True, ctx=ctx)
