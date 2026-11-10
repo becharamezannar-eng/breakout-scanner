@@ -1,13 +1,13 @@
 {
- "at": "2026-11-10T13:45:56.062013+00:00",
+ "at": "2026-11-10T14:14:42.040552+00:00",
  "sources": [
   {
    "id": "bbc_world",
    "ok": true,
    "status": 200,
-   "items": 31,
-   "recent": 30,
-   "secs": 0.4,
+   "items": 32,
+   "recent": 31,
+   "secs": 0.1,
    "link_checks": {
     "ok:200": 3
    }
@@ -18,7 +18,7 @@
    "status": 200,
    "items": 47,
    "recent": 23,
-   "secs": 0.3,
+   "secs": 0.1,
    "link_checks": {
     "ok:200": 3
    }
@@ -29,7 +29,7 @@
    "status": 200,
    "items": 21,
    "recent": 8,
-   "secs": 0.4,
+   "secs": 0.3,
    "link_checks": {
     "ok:200": 1
    }
@@ -40,7 +40,7 @@
    "status": 200,
    "items": 25,
    "recent": 5,
-   "secs": 0.6,
+   "secs": 0.1,
    "link_checks": {
     "ok:200": 1
    }
@@ -51,7 +51,7 @@
    "status": 200,
    "items": 21,
    "recent": 14,
-   "secs": 0.3,
+   "secs": 0.1,
    "link_checks": {
     "ok:200": 3
    }
@@ -62,7 +62,7 @@
    "status": 200,
    "items": 30,
    "recent": 30,
-   "secs": 0.3,
+   "secs": 0.2,
    "link_checks": {
     "ok:200": 3
    }
@@ -73,7 +73,7 @@
    "status": 200,
    "items": 30,
    "recent": 29,
-   "secs": 0.5,
+   "secs": 0.3,
    "link_checks": {
     "ok:200": 3
    }
@@ -83,9 +83,11 @@
    "ok": true,
    "status": 200,
    "items": 30,
-   "recent": 3,
-   "secs": 0.4,
-   "link_checks": {}
+   "recent": 4,
+   "secs": 0.2,
+   "link_checks": {
+    "ok:200": 1
+   }
   },
   {
    "id": "cnbc_finance",
@@ -93,9 +95,9 @@
    "status": 200,
    "items": 30,
    "recent": 4,
-   "secs": 0.3,
+   "secs": 0.2,
    "link_checks": {
-    "ok:200": 1
+    "ok:200": 2
    }
   },
   {
@@ -104,9 +106,9 @@
    "status": 200,
    "items": 30,
    "recent": 3,
-   "secs": 0.3,
+   "secs": 0.2,
    "link_checks": {
-    "ok:200": 2
+    "ok:200": 3
    }
   },
   {
@@ -127,7 +129,9 @@
    "items": 30,
    "recent": 1,
    "secs": 0.3,
-   "link_checks": {}
+   "link_checks": {
+    "ok:200": 1
+   }
   },
   {
    "id": "aljazeera",
@@ -135,7 +139,7 @@
    "status": 200,
    "items": 25,
    "recent": 25,
-   "secs": 0.1,
+   "secs": 0.2,
    "link_checks": {
     "ok:200": 3
    }
@@ -146,7 +150,7 @@
    "status": 200,
    "items": 20,
    "recent": 18,
-   "secs": 0.3,
+   "secs": 0.2,
    "link_checks": {
     "ok:200": 3
    }
@@ -168,7 +172,7 @@
    "status": 200,
    "items": 20,
    "recent": 20,
-   "secs": 0.3,
+   "secs": 0.2,
    "link_checks": {
     "ok:200": 3
    }
@@ -179,7 +183,7 @@
    "status": 200,
    "items": 20,
    "recent": 9,
-   "secs": 0.3,
+   "secs": 0.2,
    "link_checks": {
     "ok:200": 3
    }
@@ -190,7 +194,7 @@
    "status": 200,
    "items": 20,
    "recent": 16,
-   "secs": 0.2,
+   "secs": 0.1,
    "link_checks": {
     "ok:200": 3
    }
@@ -200,7 +204,7 @@
    "ok": true,
    "status": 200,
    "items": 20,
-   "recent": 15,
+   "recent": 16,
    "secs": 0.2,
    "link_checks": {
     "ok:200": 3
@@ -223,7 +227,7 @@
    "status": 200,
    "items": 19,
    "recent": 19,
-   "secs": 0.2,
+   "secs": 0.1,
    "link_checks": {
     "ok:200": 3
    }
@@ -234,7 +238,7 @@
    "status": 200,
    "items": 10,
    "recent": 4,
-   "secs": 0.2,
+   "secs": 0.5,
    "link_checks": {
     "ok:200": 3
    }
@@ -245,7 +249,7 @@
    "status": 200,
    "items": 10,
    "recent": 10,
-   "secs": 0.2,
+   "secs": 0.6,
    "link_checks": {
     "ok:200": 3
    }
@@ -266,10 +270,11 @@
    "ok": true,
    "status": 200,
    "items": 100,
-   "recent": 45,
-   "secs": 0.7,
+   "recent": 47,
+   "secs": 0.2,
    "link_checks": {
-    "paywalled:200": 3
+    "paywalled:200": 1,
+    "ok:200": 2
    }
   },
   {
@@ -300,9 +305,9 @@
    "status": 200,
    "items": 10,
    "recent": 10,
-   "secs": 0.3,
+   "secs": 0.4,
    "link_checks": {
-    "broken:202": 3
+    "protected:202": 3
    }
   },
   {
@@ -313,7 +318,7 @@
    "recent": 10,
    "secs": 0.3,
    "link_checks": {
-    "broken:202": 3
+    "protected:202": 3
    }
   },
   {
@@ -322,7 +327,7 @@
    "status": 200,
    "items": 150,
    "recent": 9,
-   "secs": 0.4,
+   "secs": 0.3,
    "link_checks": {
     "ok:200": 3
    }
@@ -333,7 +338,7 @@
    "status": 200,
    "items": 100,
    "recent": 95,
-   "secs": 0.5,
+   "secs": 0.2,
    "link_checks": {
     "ok:200": 3
    }
@@ -344,27 +349,19 @@
    "status": 200,
    "items": 23,
    "recent": 13,
-   "secs": 0.5,
+   "secs": 0.2,
    "link_checks": {}
   },
   {
    "id": "gulfnews",
    "ok": true,
    "status": 200,
-   "items": 43,
-   "recent": 43,
-   "secs": 0.3,
+   "items": 46,
+   "recent": 46,
+   "secs": 0.2,
    "link_checks": {
     "ok:200": 3
    }
-  },
-  {
-   "id": "emirates247",
-   "ok": false,
-   "status": 404,
-   "items": 0,
-   "secs": 0.2,
-   "link_checks": {}
   },
   {
    "id": "techcrunch",
@@ -383,7 +380,7 @@
    "status": 200,
    "items": 10,
    "recent": 10,
-   "secs": 0.2,
+   "secs": 0.1,
    "link_checks": {
     "paywalled:200": 3
    }
@@ -405,7 +402,7 @@
    "status": 200,
    "items": 10,
    "recent": 7,
-   "secs": 0.2,
+   "secs": 0.1,
    "link_checks": {
     "ok:200": 3
    }
@@ -427,7 +424,7 @@
    "status": 200,
    "items": 10,
    "recent": 3,
-   "secs": 0.2,
+   "secs": 0.1,
    "link_checks": {
     "ok:200": 3
    }
@@ -438,7 +435,7 @@
    "status": 200,
    "items": 10,
    "recent": 5,
-   "secs": 0.2,
+   "secs": 0.1,
    "link_checks": {
     "ok:200": 3
    }
@@ -471,7 +468,7 @@
    "status": 200,
    "items": 10,
    "recent": 0,
-   "secs": 0.2,
+   "secs": 0.1,
    "link_checks": {}
   },
   {
@@ -484,15 +481,6 @@
    "link_checks": {
     "ok:200": 3
    }
-  },
-  {
-   "id": "statcan",
-   "ok": true,
-   "status": 200,
-   "items": 0,
-   "recent": 0,
-   "secs": 0.4,
-   "link_checks": {}
   },
   {
    "id": "fed",
@@ -511,7 +499,7 @@
    "status": 200,
    "items": 15,
    "recent": 5,
-   "secs": 0.3,
+   "secs": 0.4,
    "link_checks": {
     "ok:200": 3
    }
@@ -522,9 +510,9 @@
    "status": 200,
    "items": 30,
    "recent": 5,
-   "secs": 0.3,
+   "secs": 0.4,
    "link_checks": {
-    "broken:ReadTimeout": 3
+    "protected:ReadTimeout": 3
    }
   },
   {
@@ -538,9 +526,9 @@
   {
    "id": "gdelt:(domain:reuters.com OR domain:apnews.com",
    "ok": false,
-   "status": 200,
+   "status": 429,
    "items": 0,
-   "note": "{}",
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com for larger queries. All high-traffic us",
    "link_checks": {}
   },
   {
@@ -578,25 +566,25 @@
   {
    "id": "gdelt:(domain:reuters.com OR domain:apnews.com",
    "ok": false,
-   "status": 200,
+   "status": 429,
    "items": 0,
-   "note": "{}",
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com for larger queries. All high-traffic us",
    "link_checks": {}
   },
   {
    "id": "gdelt:(domain:reuters.com OR domain:apnews.com",
    "ok": false,
-   "status": 200,
+   "status": 429,
    "items": 0,
-   "note": "{}",
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com for larger queries. All high-traffic us",
    "link_checks": {}
   },
   {
    "id": "gdelt:domain:bnnbloomberg.ca",
    "ok": false,
-   "status": 200,
+   "status": 429,
    "items": 0,
-   "note": "{}",
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com for larger queries. All high-traffic us",
    "link_checks": {}
   },
   {
@@ -615,6 +603,41 @@
    "link_checks": {
     "ok:200": 1
    }
+  },
+  {
+   "id": "gdelt-test:domain:reuters.com canada",
+   "ok": false,
+   "status": 429,
+   "items": -1,
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com"
+  },
+  {
+   "id": "gdelt-test:canada domainis:reuters.com",
+   "ok": false,
+   "status": 429,
+   "items": -1,
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com"
+  },
+  {
+   "id": "gdelt-test:(canada OR canadian) domain:reuters.com",
+   "ok": false,
+   "status": 429,
+   "items": -1,
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com"
+  },
+  {
+   "id": "gdelt-test:domain:apnews.com",
+   "ok": false,
+   "status": 429,
+   "items": -1,
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com"
+  },
+  {
+   "id": "gdelt-test:sourcecountry:canada economy",
+   "ok": false,
+   "status": 429,
+   "items": -1,
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com"
   }
  ]
 }
