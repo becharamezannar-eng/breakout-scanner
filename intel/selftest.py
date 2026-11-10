@@ -20,6 +20,7 @@ def check(name, cond, detail=""):
 RSS = b"""<?xml version="1.0"?><rss version="2.0"><channel><title>T</title>
 <item><title>Bank of Canada holds rate at 2.25% as inflation cools</title><link>https://www.cbc.ca/news/boc-1?utm_source=rss</link>
 <description>&lt;p&gt;The central bank kept its key rate.&lt;/p&gt;</description><pubDate>Mon, 10 Nov 2026 10:00:00 GMT</pubDate></item>
+<item><title>Interest Rate Announcement</title><link>https://www.bankofcanada.ca/2026/12/fad-press-release-2026-12-09/</link><pubDate>Wed, 09 Dec 2026 14:45:00 GMT</pubDate></item>
 <item><title>Old story</title><link>https://www.cbc.ca/old</link><pubDate>Mon, 02 Nov 2026 10:00:00 GMT</pubDate></item>
 </channel></rss>"""
 ATOM = b"""<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>A</title>
@@ -56,12 +57,12 @@ class FakeSession:
 def test_feeds():
     now = dt.datetime(2026, 11, 10, 12, tzinfo=dt.timezone.utc)
     items = K.parse_feed(RSS)
-    check("RSS parsed (2 items, HTML stripped)", len(items) == 2 and items[0][2] == "The central bank kept its key rate.")
+    check("RSS parsed (3 items, HTML stripped)", len(items) == 3 and items[0][2] == "The central bank kept its key rate.")
     atom = K.parse_feed(ATOM)
     check("Atom parsed (href links)", len(atom) == 1 and atom[0][1].startswith("https://www150.statcan.gc.ca"))
     src = dict(id="cbc", name="CBC News", url="https://x/rss", tier=2, sections=["canada"])
     arts, h = K.fetch_feed(src, now - dt.timedelta(hours=30), FakeSession({"x/rss": Resp(200, RSS, "")}))
-    check("only recent articles kept", len(arts) == 1 and h["ok"] and h["items"] == 2, (len(arts), h))
+    check("only recent, non-future articles kept", len(arts) == 1 and h["ok"] and h["items"] == 3, (len(arts), h))
     check("tracking parameters removed",
           K.canonical_url("https://www.cbc.ca/news/boc-1/?utm_source=rss&id=5#top") == "https://cbc.ca/news/boc-1?id=5")
     _, bad = K.fetch_feed(src, now, FakeSession({"x/rss": Resp(404, b"", "")}))

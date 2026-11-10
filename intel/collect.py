@@ -130,9 +130,10 @@ def fetch_feed(src, since, session=None):
     except Exception as e:
         return [], dict(id=src["id"], ok=False, status=type(e).__name__, items=0, secs=round(time.time() - t0, 1))
     arts = []
+    future = dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=2)
     for title, link, summary, published in entries:
         pub = parse_date(published)
-        if pub is None or pub < since:
+        if pub is None or pub < since or pub > future:      # future dates = scheduled events (e.g. BoC calendar), not news
             continue
         arts.append(dict(id=article_id(link), url=link, title=title, summary=summary, source=src["name"],
                          source_id=src["id"], tier=src.get("tier", 2), lang=src.get("lang", "en"), published=pub,
