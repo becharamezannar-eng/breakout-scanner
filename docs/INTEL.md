@@ -10,7 +10,7 @@ reputable free sources, verified link by link, analysed by Claude, delivered by 
             sources.yaml                                    ┌──────────────── one brief ────────────────┐
  RSS / Atom (CBC, BBC, CNBC, BoC, Fed, StatCan, Ontario,    │ 1 collect   last 30 h (Mon: +weekend)     │
  Quebec, Radio-Canada, La Presse, The National, ...)  ──────▶ 2 cluster   merge the same story, score:  │
- GDELT (Reuters, AP, BNN Bloomberg, CTV ...)          ──────▶             outlets, source tier, focus,  │
+ GDELT (Reuters, AP ...; server only)                 ──────▶             outlets, source tier, focus,  │
  NewsAPI (optional, paid plan)                        ──────▶             recency; route to sections    │
  Yahoo Finance (indexes, futures, yields, FX, oil, gold) ───▶ 3 verify    every link: HTTP 200, free,   │
                                                             │             not opinion, not paywalled    │
@@ -36,7 +36,9 @@ server to maintain). The server is only needed for instant Telegram commands, an
 - Every link is fetched before it can be shown: 404/410/5xx/timeouts, login or subscribe redirects, JSON-LD
   `isAccessibleForFree: false`, locked/metered content tiers and subscriber-wall text are all rejected; opinion
   pieces (URL, headline, `OpinionNewsArticle`, opinion sections) are rejected.
-- Reuters and AP block automated checks; their links (straight from GDELT/feeds) are shown and marked
+- GDELT (the way to find Reuters and AP stories, which have no public feeds) rate-limits GitHub's shared servers,
+  so it is on only in server mode (`INTEL_GDELT=on`). Their big stories still arrive through the other outlets.
+- Reuters, AP, La Presse and canada.ca block or stall automated checks; their links (straight from GDELT/feeds) are shown and marked
   "site blocks automated checks". They are free to read in a browser.
 - The AI sees article ids, never writes URLs; any id it cites that wasn't given is removed; an item left with no
   verified source is deleted. Market numbers come from Yahoo Finance, not from the AI.

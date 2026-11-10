@@ -108,18 +108,6 @@ def probe(s, cache):
     for sid, c in checks.items():
         if sid.startswith("gdelt_"):
             health.append(dict(id=sid, ok=True, status="links", items=len(by_src[sid]), link_checks=c))
-    import requests, time as _t
-    from .collect import GDELT_API, UA
-    for q in ["domain:reuters.com canada", "canada domainis:reuters.com", "(canada OR canadian) domain:reuters.com",
-              "domain:apnews.com", "sourcecountry:canada economy"]:
-        _t.sleep(10)
-        try:
-            r = requests.get(GDELT_API, params=dict(query=q, mode="artlist", format="json", maxrecords=50, timespan="24h"),
-                             headers={"User-Agent": UA}, timeout=40)
-            n = len(r.json().get("articles", [])) if r.text.strip().startswith("{") else -1
-            health.append(dict(id=f"gdelt-test:{q}", ok=n > 0, status=r.status_code, items=n, note=r.text[:80] if n < 0 else ""))
-        except Exception as e:
-            health.append(dict(id=f"gdelt-test:{q}", ok=False, status=type(e).__name__, items=0))
     out = Path(s.outdir) / "intel"
     out.mkdir(parents=True, exist_ok=True)
     (out / "source_health.json").write_text(json.dumps(dict(at=dt.datetime.now(dt.timezone.utc).isoformat(),

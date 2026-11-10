@@ -32,6 +32,9 @@ class Settings:
     telegram_full: bool = field(default_factory=lambda: _env("INTEL_TELEGRAM_FULL", "0") == "1")
     # Optional extra source
     newsapi_key: str = field(default_factory=lambda: _env("NEWSAPI_KEY"))
+    # GDELT (Reuters/AP discovery): rate-limits GitHub's shared servers, so on by default only on a server
+    gdelt: bool = field(default_factory=lambda: _env("INTEL_GDELT", "on" if _env("DATABASE_URL") else "off").lower()
+                        in ("on", "1", "true", "yes"))
     # Storage: DATABASE_URL (postgresql://... or sqlite:///path) on a server; JSON files in reports/ on GitHub
     database_url: str = field(default_factory=lambda: _env("DATABASE_URL"))
     redis_url: str = field(default_factory=lambda: _env("REDIS_URL"))

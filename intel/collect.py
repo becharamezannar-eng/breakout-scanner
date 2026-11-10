@@ -157,17 +157,21 @@ def domain_of(url):
     return urlparse(url).netloc.lower().removeprefix("www.")
 
 
-def fetch_gdelt(cfg, hours, session=None):
+def fetch_gdelt(cfg, hours, session=None, budget_s=240):
     """GDELT DOC 2.0 article lists. Polite: one request every 6 seconds."""
     s = session or requests
     allowed = set(cfg.get("domains", []))
     arts, health = [], []
+    deadline = time.time() + budget_s                   # GDELT is a bonus source: never let it delay the brief
     for i, q in enumerate(cfg.get("queries", [])):
+        if time.time() > deadline:
+            health.append(dict(id=f"gdelt:{q['q'][:40]}", ok=False, status="skipped (time budget)", items=0))
+            continue
         params = dict(query=q["q"] + " sourcelang:english", mode="artlist", format="json", maxrecords=200,
                       timespan=f"{hours}h", sort="datedesc")
         try:
-            for attempt in range(4):                       # shared cloud IPs often hit GDELT's 1-per-5s limit
-                time.sleep(8 if attempt == 0 else 20 * attempt)
+            for attempt in range(3):                       # shared cloud IPs often hit GDELT's 1-per-5s limit
+                time.sleep(7 if attempt == 0 else 12 * attempt)
                 r = s.get(GDELT_API, params=params, headers={"User-Agent": UA}, timeout=40)
                 if r.status_code != 429:
                     break
@@ -232,7 +236,7 @@ def collect(settings, sources=None, now=None):
             arts += got
             health.append(h)
         try:
-            g, gh = fetch_gdelt(sources.get("gdelt", {}), min(hours, 72), sess)
+            g, gh = fetch_gdelt(sources.get("gdelt", {}), min(hours, 72), sess) if settings.gdelt else ([], [])
             arts += g
             health += gh
         except Exception as e:
