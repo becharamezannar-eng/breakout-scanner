@@ -1,0 +1,44 @@
+name: Brief tests
+
+# Tests the Global Intelligence & Wealth Brief against real PostgreSQL and Redis, and builds the server image.
+# Runs only when the brief's code changes; it never touches the scanner or the published site.
+on:
+  push:
+    paths: ["intel/**", "deploy/**", ".github/workflows/intel-ci.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: {POSTGRES_DB: intel, POSTGRES_USER: intel, POSTGRES_PASSWORD: test}
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U intel" --health-interval 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -r intel/requirements.txt -r deploy/requirements-server.txt
+      - name: Self-test (SQLite, JSON, PostgreSQL, Redis)
+        env:
+          INTEL_TEST_DATABASE_URL: postgresql://intel:test@localhost:5432/intel
+          INTEL_TEST_REDIS_URL: redis://localhost:6379/0
+        run: python -m intel selftest
+      - name: Build the server image
+        run: docker build -f deploy/Dockerfile -t intel-brief:test .
+      - name: Container starts and reports healthy
+        run: |
+          docker run -d --name t -e INTEL_SCHEDULE=off intel-brief:test
+          for i in $(seq 1 30); do s=$(docker inspect -f '{{.State.Health.Status}}' t); [ "$s" = healthy ] && break; sleep 5; done
+          docker logs t | tail -20
+          docker exec t curl -fsS http://127.0.0.1:8080/healthz

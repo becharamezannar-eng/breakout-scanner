@@ -60,3 +60,6 @@ No username or password. The app's Portfolio tab opens the owner's portfolio fro
 * Holding other people's emails and portfolios needs a privacy notice and consent (PIPEDA).
 * The current reports (including the owner's portfolio) are on a public link; consider moving the owner's holdings
   off the public site before sharing the app widely.
+
+## Global Intelligence & Wealth Brief
+Separate module `intel/` (news, AI analysis, Telegram, archive); full design, deployment and maintenance in `docs/INTEL.md`.

@@ -12,12 +12,18 @@ on:
     # Backtest: Saturdays 12:00 UTC.
     # (Schedule re-registered 2026-10-19 after scheduled runs stopped firing; no change to times.)
     - cron: "0 12 * * 6"
+    # Global Intelligence & Wealth Brief: every day, ready by ~6:00 am ET. Three times so it lands at 5:20 am ET in
+    # summer and winter alike; the script's gate runs only the first one between 5 and 9 am ET (the others retry
+    # automatically if that one failed, and otherwise do nothing).
+    - cron: "20 9 * * *"
+    - cron: "20 10 * * *"
+    - cron: "20 11 * * *"
   workflow_dispatch:      # start any mode by hand from the Actions tab
     inputs:
       mode:
         description: "What to run"
         type: choice
-        options: [scan, morning, backtest, lookup, esg, esg_lookup]
+        options: [scan, morning, backtest, lookup, esg, esg_lookup, brief, weekly, brief_probe]
         default: scan
       ticker:
         description: "Ticker for a lookup (e.g. SHOP.TO, NVDA)"
@@ -57,12 +63,33 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then m="${{ inputs.mode }}"
           elif [ "${{ github.event.schedule }}" = "0 12 * * 6" ]; then m=backtest
           elif [ "${{ github.event.schedule }}" = "0 22 * * 1-5" ]; then m=scan
+          elif [[ "${{ github.event.schedule }}" == "20 "* ]]; then m=brief
           else m=morning; fi
           echo "mode=$m" >> "$GITHUB_OUTPUT"
           echo "Mode: $m"
 
       - name: Self-test
         run: python breakout_scanner.py --selftest
+
+      - name: Global Intelligence & Wealth Brief (separate tab)
+        if: steps.mode.outputs.mode == 'brief' || steps.mode.outputs.mode == 'weekly' || steps.mode.outputs.mode == 'brief_probe'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+          INTEL_MODEL: ${{ vars.INTEL_MODEL }}
+          INTEL_EFFORT: ${{ vars.INTEL_EFFORT }}
+          INTEL_PROVIDER: ${{ vars.INTEL_PROVIDER }}
+        run: |
+          pip install -r intel/requirements.txt
+          python -m intel selftest
+          case "${{ steps.mode.outputs.mode }}" in
+            brief) python -m intel run --outdir reports ${{ github.event_name == 'schedule' && '--gate' || '' }} ;;
+            weekly) python -m intel weekly --outdir reports ;;
+            brief_probe) python -m intel probe --outdir reports ;;
+          esac
 
       - name: Evening scan (all six indexes)
         if: steps.mode.outputs.mode == 'scan'
@@ -118,6 +145,7 @@ jobs:
           cp reports/*.html reports/*.csv site/
           if [ -d reports/lookup ]; then cp -r reports/lookup site/; fi
           if [ -d reports/esg ]; then cp -r reports/esg site/; fi
+          if [ -d reports/intel ]; then cp -r reports/intel site/; fi
           if [ -d app ]; then cp -r app site/; fi
           cp reports/*.json site/ 2>/dev/null || true
           {

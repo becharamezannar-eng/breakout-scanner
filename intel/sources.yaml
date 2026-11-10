@@ -1,0 +1,97 @@
+# Source registry for the Global Intelligence & Wealth Brief.
+#
+# tier:    1 = wire service / central bank / official statistics, 2 = major news organisation, 3 = specialist trade press
+# paywall: none  = free;  check = metered or partly paywalled, every article is checked and dropped if locked
+# sections: where its stories go first (keyword routing adds more)
+# Each feed is checked by `python -m intel probe`; feeds that fail are skipped automatically and reported.
+#
+# Domains that are always excluded (hard paywalls or opinion-led): see BLOCKED_DOMAINS in verify.py.
+
+rss:
+  # --- Wire-quality world / business news -------------------------------------------------------
+  - {name: BBC News, id: bbc_world, url: "https://feeds.bbci.co.uk/news/world/rss.xml", tier: 2, sections: [geopolitics]}
+  - {name: BBC News, id: bbc_business, url: "https://feeds.bbci.co.uk/news/business/rss.xml", tier: 2, sections: [global_economy, financial_markets]}
+  - {name: BBC News, id: bbc_tech, url: "https://feeds.bbci.co.uk/news/technology/rss.xml", tier: 2, sections: [ai_technology]}
+  - {name: BBC News, id: bbc_mideast, url: "https://feeds.bbci.co.uk/news/world/middle_east/rss.xml", tier: 2, sections: [middle_east]}
+  - {name: BBC News, id: bbc_us_canada, url: "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml", tier: 2, sections: [united_states]}
+  - {name: CNBC, id: cnbc_top, url: "https://www.cnbc.com/id/100003114/device/rss/rss.html", tier: 2, sections: [financial_markets]}
+  - {name: CNBC, id: cnbc_world, url: "https://www.cnbc.com/id/100727362/device/rss/rss.html", tier: 2, sections: [geopolitics, global_economy]}
+  - {name: CNBC, id: cnbc_economy, url: "https://www.cnbc.com/id/20910258/device/rss/rss.html", tier: 2, sections: [global_economy, united_states]}
+  - {name: CNBC, id: cnbc_finance, url: "https://www.cnbc.com/id/10000664/device/rss/rss.html", tier: 2, sections: [financial_markets, wealth]}
+  - {name: CNBC, id: cnbc_investing, url: "https://www.cnbc.com/id/15839069/device/rss/rss.html", tier: 2, sections: [wealth, financial_markets]}
+  - {name: CNBC, id: cnbc_tech, url: "https://www.cnbc.com/id/19854910/device/rss/rss.html", tier: 2, sections: [ai_technology]}
+  - {name: CNBC, id: cnbc_smallbiz, url: "https://www.cnbc.com/id/44877279/device/rss/rss.html", tier: 2, sections: [business]}
+  - {name: MarketWatch, id: mw_top, url: "https://feeds.content.dowjones.io/public/rss/mw_topstories", tier: 2, paywall: check, sections: [financial_markets]}
+  - {name: MarketWatch, id: mw_pulse, url: "https://feeds.content.dowjones.io/public/rss/mw_marketpulse", tier: 2, paywall: check, sections: [financial_markets]}
+  - {name: Al Jazeera, id: aljazeera, url: "https://www.aljazeera.com/xml/rss/all.xml", tier: 2, sections: [geopolitics, middle_east]}
+
+  # --- Canada -------------------------------------------------------------------------------------
+  - {name: CBC News, id: cbc_top, url: "https://www.cbc.ca/webfeed/rss/rss-topstories", tier: 2, sections: [canada]}
+  - {name: CBC News, id: cbc_business, url: "https://www.cbc.ca/webfeed/rss/rss-business", tier: 2, sections: [canada, global_economy]}
+  - {name: CBC News, id: cbc_canada, url: "https://www.cbc.ca/webfeed/rss/rss-canada", tier: 2, sections: [canada]}
+  - {name: CBC News, id: cbc_politics, url: "https://www.cbc.ca/webfeed/rss/rss-politics", tier: 2, sections: [canada]}
+  - {name: CBC News, id: cbc_montreal, url: "https://www.cbc.ca/webfeed/rss/rss-canada-montreal", tier: 2, sections: [quebec]}
+  - {name: CBC News, id: cbc_toronto, url: "https://www.cbc.ca/webfeed/rss/rss-canada-toronto", tier: 2, sections: [ontario]}
+  - {name: CBC News, id: cbc_tech, url: "https://www.cbc.ca/webfeed/rss/rss-technology", tier: 2, sections: [ai_technology]}
+  - {name: CBC News, id: cbc_world, url: "https://www.cbc.ca/webfeed/rss/rss-world", tier: 2, sections: [geopolitics]}
+  - {name: Global News, id: global_money, url: "https://globalnews.ca/money/feed/", tier: 2, sections: [canada, wealth]}
+  - {name: Global News, id: global_toronto, url: "https://globalnews.ca/toronto/feed/", tier: 2, sections: [ontario]}
+  - {name: Global News, id: global_montreal, url: "https://globalnews.ca/montreal/feed/", tier: 2, sections: [quebec]}
+  - {name: Financial Post, id: fp, url: "https://financialpost.com/feed/", tier: 2, paywall: check, sections: [canada, financial_markets]}
+  - {name: The Globe and Mail, id: globe_business, url: "https://www.theglobeandmail.com/arc/outboundfeeds/rss/category/business/", tier: 2, paywall: check, sections: [canada]}
+  - {name: BNN Bloomberg, id: bnn, url: "https://www.bnnbloomberg.ca/arc/outboundfeeds/rss/?outputType=xml", tier: 2, sections: [financial_markets, canada]}
+  - {name: Radio-Canada, id: rc_economie, url: "https://ici.radio-canada.ca/rss/5717", tier: 2, lang: fr, sections: [quebec, canada]}
+  - {name: Radio-Canada, id: rc_une, url: "https://ici.radio-canada.ca/rss/4159", tier: 2, lang: fr, sections: [quebec]}
+  - {name: La Presse, id: lapresse_affaires, url: "https://www.lapresse.ca/affaires/rss", tier: 2, lang: fr, sections: [quebec]}
+  - {name: La Presse, id: lapresse_actualites, url: "https://www.lapresse.ca/actualites/rss", tier: 2, lang: fr, sections: [quebec]}
+  - {name: BetaKit, id: betakit, url: "https://betakit.com/feed/", tier: 3, sections: [business, ai_technology]}
+
+  # --- Middle East / UAE ----------------------------------------------------------------------------
+  - {name: The National, id: national, url: "https://www.thenationalnews.com/arc/outboundfeeds/rss/?outputType=xml", tier: 2, sections: [middle_east]}
+  - {name: The National, id: national_business, url: "https://www.thenationalnews.com/arc/outboundfeeds/rss/category/business/?outputType=xml", tier: 2, sections: [middle_east]}
+  - {name: Gulf News, id: gulfnews_business, url: "https://gulfnews.com/feed/business", tier: 2, sections: [middle_east]}
+  - {name: Khaleej Times, id: khaleej, url: "https://www.khaleejtimes.com/feed", tier: 2, sections: [middle_east]}
+  - {name: Arabian Business, id: arabianbusiness, url: "https://www.arabianbusiness.com/feed", tier: 3, sections: [middle_east, business]}
+
+  # --- Technology / AI / marketing --------------------------------------------------------------
+  - {name: TechCrunch, id: techcrunch, url: "https://techcrunch.com/feed/", tier: 3, sections: [ai_technology, business]}
+  - {name: The Verge, id: verge, url: "https://www.theverge.com/rss/index.xml", tier: 3, sections: [ai_technology]}
+  - {name: Ars Technica, id: ars, url: "https://feeds.arstechnica.com/arstechnica/index", tier: 3, sections: [ai_technology]}
+  - {name: VentureBeat, id: venturebeat, url: "https://venturebeat.com/category/ai/feed/", tier: 3, sections: [ai_technology, business]}
+  - {name: MIT Technology Review, id: mittr, url: "https://www.technologyreview.com/feed/", tier: 3, paywall: check, sections: [ai_technology]}
+  - {name: BleepingComputer, id: bleeping, url: "https://www.bleepingcomputer.com/feed/", tier: 3, sections: [ai_technology]}
+  - {name: Search Engine Land, id: sel, url: "https://searchengineland.com/feed", tier: 3, sections: [business]}
+  - {name: Marketing Dive, id: marketingdive, url: "https://www.marketingdive.com/feeds/news/", tier: 3, sections: [business]}
+  - {name: Social Media Today, id: smt, url: "https://www.socialmediatoday.com/feeds/news/", tier: 3, sections: [business]}
+
+  # --- Central banks, statistics agencies, governments, international bodies ------------------------
+  - {name: Bank of Canada, id: boc, url: "https://www.bankofcanada.ca/content_type/press-releases/feed/", tier: 1, sections: [canada, global_economy, wealth]}
+  - {name: Bank of Canada, id: boc_all, url: "https://www.bankofcanada.ca/feed/", tier: 1, sections: [canada, global_economy]}
+  - {name: Statistics Canada, id: statcan, url: "https://www150.statcan.gc.ca/n1/rss/dai-quo/0-eng.atom", tier: 1, sections: [canada, global_economy]}
+  - {name: Federal Reserve, id: fed, url: "https://www.federalreserve.gov/feeds/press_all.xml", tier: 1, sections: [united_states, global_economy]}
+  - {name: U.S. Bureau of Labor Statistics, id: bls, url: "https://www.bls.gov/feed/bls_latest.rss", tier: 1, sections: [united_states, global_economy]}
+  - {name: IMF, id: imf, url: "https://www.imf.org/en/News/rss?language=eng", tier: 1, sections: [global_economy]}
+  - {name: World Bank, id: worldbank, url: "https://www.worldbank.org/en/news/rss.xml", tier: 1, sections: [global_economy]}
+  - {name: OECD, id: oecd, url: "https://www.oecd.org/en/about/newsroom.rss", tier: 1, sections: [global_economy]}
+  - {name: Government of Ontario, id: ontario_news, url: "https://news.ontario.ca/newsroom/en/rss/allnews.rss", tier: 1, sections: [ontario]}
+  - {name: Gouvernement du Québec, id: quebec_news, url: "https://www.quebec.ca/nouvelles/rss", tier: 1, lang: fr, sections: [quebec]}
+  - {name: Department of Finance Canada, id: fin_canada, url: "https://api.io.canada.ca/io-server/gc/news/en/v2?dept=departmentfinance&sort=publishedDate&orderBy=desc&pick=30&format=atom", tier: 1, sections: [canada]}
+  - {name: Dubai Media Office, id: dubai_media, url: "https://www.mediaoffice.ae/en/rss", tier: 1, sections: [middle_east]}
+
+# GDELT (free, no key): finds articles from outlets without public RSS (Reuters, AP, BNN Bloomberg...).
+# One query per line; results are filtered to the allowed domains below. GDELT allows ~1 request / 5 seconds.
+gdelt:
+  domains: [reuters.com, apnews.com, bnnbloomberg.ca, cbc.ca, ctvnews.ca, globalnews.ca, financialpost.com,
+            cnbc.com, bbc.com, bbc.co.uk, thenationalnews.com, gulfnews.com, khaleejtimes.com, aljazeera.com,
+            marketwatch.com, theglobeandmail.com, lapresse.ca, ici.radio-canada.ca]
+  queries:
+    - {q: "(domain:reuters.com OR domain:apnews.com) (Canada OR Canadian OR Ottawa)", sections: [canada]}
+    - {q: "(domain:reuters.com OR domain:apnews.com) (Quebec OR Montreal OR Ontario OR Toronto)", sections: [quebec, ontario]}
+    - {q: "(domain:reuters.com OR domain:apnews.com) (\"Federal Reserve\" OR inflation OR \"interest rates\" OR GDP OR economy)", sections: [global_economy, united_states]}
+    - {q: "(domain:reuters.com OR domain:apnews.com) (stocks OR bonds OR oil OR gold OR dollar OR markets)", sections: [financial_markets]}
+    - {q: "(domain:reuters.com OR domain:apnews.com) (Dubai OR UAE OR \"Abu Dhabi\" OR Saudi OR Gulf OR Israel OR Iran)", sections: [middle_east]}
+    - {q: "(domain:reuters.com OR domain:apnews.com) (sanctions OR election OR summit OR war OR tariffs OR diplomacy)", sections: [geopolitics]}
+    - {q: "(domain:reuters.com OR domain:apnews.com) (\"artificial intelligence\" OR AI OR chips OR cybersecurity)", sections: [ai_technology]}
+    - {q: "(domain:reuters.com OR domain:apnews.com) (bank OR banks OR ETF OR \"asset manager\" OR wealth OR pension)", sections: [wealth]}
+    - {q: "domain:bnnbloomberg.ca", sections: [financial_markets, canada]}
+    - {q: "(domain:ctvnews.ca OR domain:globalnews.ca) (economy OR housing OR bank OR business)", sections: [canada]}

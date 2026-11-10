@@ -1,2 +1,5 @@
 __pycache__/
 *.pyc
+
+# brief server secrets
+deploy/.env

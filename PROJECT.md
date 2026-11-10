@@ -23,6 +23,7 @@ using the uploaded trading books and live financial data.
 | Morning full market brief | Morning run does a full live scan first (`--live`), then the morning check; `live_brief.json` |
 | ESG scanner (separate tab) | `esg_scanner.py` -> `esg/index.html`, ESG search -> `esg/lookup/<TICKER>.html` |
 | Phone app | `app/` (installable web app); see `ARCHITECTURE.md` |
+| Global Intelligence & Wealth Brief (news tab) | `intel/` -> `intel/index.html`, Telegram; see `docs/INTEL.md` |
 | External accounts and user portfolios | Planned (account service); see `ARCHITECTURE.md` |
 
 ## Schedule (Toronto time, GitHub Actions `.github/workflows/scan.yml`)
@@ -31,6 +32,7 @@ using the uploaded trading books and live financial data.
 | Evening scan | Mon-Fri 6:00 pm (5:00 pm after Nov 1) | `0 22 * * 1-5` |
 | Morning check | Mon-Fri ~10:15 am, plus ~11:15 am until Nov 1 | `15 14 * * 1-5`, `15 15 * * 1-5` |
 | Backtest | Saturdays 8:00 am (7:00 am after Nov 1) | `0 12 * * 6` |
+| Global Intelligence & Wealth Brief | Every day, ready by ~6:00 am | `20 9,10,11 * * *` (gated: first run after 5:00 am ET) |
 GitHub often starts scheduled runs 15-45 minutes late. "Scan now" and the search box run on demand.
 The schedule stays as is unless Bechara changes it.
 
