@@ -24,7 +24,9 @@ BLOCKED_DOMAINS = {"wsj.com", "ft.com", "bloomberg.com", "economist.com", "barro
                    "washingtonpost.com", "thestar.com", "ledevoir.com", "theinformation.com", "seekingalpha.com",
                    "fool.com", "businessinsider.com", "telegraph.co.uk", "thetimes.co.uk", "hbr.org", "nationalpost.com",
                    "montrealgazette.com", "torontosun.com", "zerohedge.com"}
-BOT_PROTECTED_OK = {"reuters.com", "apnews.com"}      # free to read, but often refuse automated requests
+# Free to read in a browser, but they refuse or stall automated requests (bot walls answer 401/403/429/202;
+# canada.ca is often too slow from cloud servers). Their URLs come straight from their own feeds or GDELT.
+BOT_PROTECTED_OK = {"reuters.com", "apnews.com", "lapresse.ca", "canada.ca"}
 OPINION_PATH = re.compile(r"/(opinion|opinions|commentary|columnists?|editorials?|letters|blogs?|op-ed|chroniques?|"
                           r"opinions?-|debats?|analysis/opinion)(/|-|$)", re.I)
 OPINION_TITLE = re.compile(r"^\s*(opinion|commentary|editorial|column|letters?|chronique|op-ed|analysis:? opinion)\b"
@@ -33,6 +35,10 @@ PAYWALL_TEXT = re.compile(r"(subscribe to (continue|keep) reading|this (article|
                           r"(for|to) (subscribers|members)|already a subscriber\?|become a subscriber to read|"
                           r"réservé aux abonnés|abonnez-vous pour lire|premium content|subscriber-only)", re.I)
 LOGIN_PATH = re.compile(r"/(subscribe|subscription|login|signin|sign-in|paywall|register|account)(/|\?|$)", re.I)
+
+
+def _protected(dom):
+    return any(dom == d or dom.endswith("." + d) for d in BOT_PROTECTED_OK)
 
 
 def is_blocked(url):
@@ -131,11 +137,13 @@ def check(article, session=None, cache=None):
                 else:
                     st, excerpt, _ = inspect_html(content, r.url, article.get("paywall", "none"))
                     res.update(check=st, excerpt=excerpt)
-            elif r.status_code in (401, 403, 429) and any(dom == d or dom.endswith("." + d) for d in BOT_PROTECTED_OK):
+            elif r.status_code in (202, 401, 403, 429) and _protected(dom):
                 res["check"] = "protected"
             else:
                 res["check"] = "broken"
-        except requests.RequestException as e:          # timeouts, DNS, TLS: never shown
+        except requests.Timeout as e:                   # slow official servers: shown as unverifiable, others dropped
+            res.update(check="protected" if _protected(domain_of(url)) else "broken", http=type(e).__name__)
+        except requests.RequestException as e:          # DNS, TLS, refused: never shown
             res.update(check="broken", http=type(e).__name__)
     if cache is not None and res["check"] != "broken":          # retry broken links next time
         cache.set_json(key, res, ttl=24 * 3600)

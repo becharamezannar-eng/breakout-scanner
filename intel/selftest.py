@@ -117,13 +117,15 @@ def test_verify():
         "reuters.com": lambda u: Resp(401, b"", u),
         "other403": Resp(403, b"", "https://other403.com/a"),
         "wall": lambda u: Resp(200, page_html("x"), "https://globe.com/subscribe?next=1"),
+        "lapresse.ca": lambda u: Resp(202, b"", u),
     })
     res = {k: V.check(art(k, "S", url=u), sess)["check"] for k, u in [
         ("dead", "https://cbc.ca/dead"), ("reuters", "https://www.reuters.com/world/x-2026-11-10/"),
         ("other", "https://other403.com/a"), ("wall", "https://globe.com/wall-story"),
-        ("wsj", "https://www.wsj.com/a"), ("opinion", "https://cbc.ca/opinion/a"), ("good", "https://cbc.ca/good")]}
+        ("wsj", "https://www.wsj.com/a"), ("opinion", "https://cbc.ca/opinion/a"), ("good", "https://cbc.ca/good"),
+        ("lapresse", "https://www.lapresse.ca/affaires/2026-11-10/x.php")]}
     want = dict(dead="broken", reuters="protected", other="broken", wall="paywalled", wsj="blocked",
-                opinion="opinion", good="ok")
+                opinion="opinion", good="ok", lapresse="protected")
     check("link checks: broken / protected / paywalled / blocked / opinion / ok", res == want, res)
 
 

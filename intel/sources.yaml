@@ -50,7 +50,7 @@ rss:
   - {name: The National, id: national, url: "https://www.thenationalnews.com/arc/outboundfeeds/rss/?outputType=xml", tier: 2, sections: [middle_east]}
   - {name: The National, id: national_business, url: "https://www.thenationalnews.com/arc/outboundfeeds/rss/category/business/?outputType=xml", tier: 2, sections: [middle_east]}
   - {name: Gulf News, id: gulfnews, url: "https://gulfnews.com/feed", tier: 2, sections: [middle_east]}
-  - {name: Emirates 24/7, id: emirates247, url: "https://www.emirates247.com/cmlink/rss-feed-1.4268?localLinksEnabled=false", tier: 2, sections: [middle_east]}
+  # removed after probe 2026-11-10 (emirates247): no usable items
   # removed after probe 2026-11-10 (gulfnews_business): feed failed or its links failed checks
   # removed after probe 2026-11-10 (khaleej): feed failed or its links failed checks
   # removed after probe 2026-11-10 (arabianbusiness): feed failed or its links failed checks
@@ -71,7 +71,7 @@ rss:
   # --- Central banks, statistics agencies, governments, international bodies ------------------------
   - {name: Bank of Canada, id: boc, url: "https://www.bankofcanada.ca/content_type/press-releases/feed/", tier: 1, sections: [canada, global_economy, wealth]}
   - {name: Bank of Canada, id: boc_all, url: "https://www.bankofcanada.ca/feed/", tier: 1, sections: [canada, global_economy]}
-  - {name: Statistics Canada, id: statcan, url: "https://www150.statcan.gc.ca/n1/rss/dai-quo/0-eng.atom", tier: 1, sections: [canada, global_economy]}
+  # removed after probe 2026-11-10 (statcan): no usable items
   - {name: Federal Reserve, id: fed, url: "https://www.federalreserve.gov/feeds/press_all.xml", tier: 1, sections: [united_states, global_economy]}
   # removed after probe 2026-11-10 (bls): feed failed or its links failed checks
   # removed after probe 2026-11-10 (imf): feed failed or its links failed checks

@@ -50,7 +50,7 @@ def _src_links(ids, arts):
         if not a:
             continue
         day = a.get("published", "")[:10]
-        note = " (site blocks automated checks)" if a.get("check") == "protected" else ""
+        note = " (site blocks automated link checks; free to read)" if a.get("check") == "protected" else ""
         out.append(f'<a href="{e(a["url"])}" target="_blank" rel="noopener">{e(a["source"])}</a> {e(day)}{note}')
     return " &middot; ".join(out)
 
