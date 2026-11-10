@@ -1,0 +1,707 @@
+{
+ "at": "2026-11-10T13:24:52.403341+00:00",
+ "sources": [
+  {
+   "id": "bbc_world",
+   "ok": true,
+   "status": 200,
+   "items": 30,
+   "recent": 29,
+   "secs": 0.1,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "bbc_business",
+   "ok": true,
+   "status": 200,
+   "items": 47,
+   "recent": 23,
+   "secs": 0.2,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "bbc_tech",
+   "ok": true,
+   "status": 200,
+   "items": 21,
+   "recent": 8,
+   "secs": 0.3,
+   "link_checks": {
+    "ok": 1
+   }
+  },
+  {
+   "id": "bbc_mideast",
+   "ok": true,
+   "status": 200,
+   "items": 25,
+   "recent": 5,
+   "secs": 0.2,
+   "link_checks": {
+    "ok": 1
+   }
+  },
+  {
+   "id": "bbc_us_canada",
+   "ok": true,
+   "status": 200,
+   "items": 21,
+   "recent": 14,
+   "secs": 0.2,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "cnbc_top",
+   "ok": true,
+   "status": 200,
+   "items": 30,
+   "recent": 30,
+   "secs": 0.3,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "cnbc_world",
+   "ok": true,
+   "status": 200,
+   "items": 30,
+   "recent": 29,
+   "secs": 0.4,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "cnbc_economy",
+   "ok": true,
+   "status": 200,
+   "items": 30,
+   "recent": 3,
+   "secs": 0.3,
+   "link_checks": {}
+  },
+  {
+   "id": "cnbc_finance",
+   "ok": true,
+   "status": 200,
+   "items": 30,
+   "recent": 4,
+   "secs": 0.3,
+   "link_checks": {
+    "ok": 1
+   }
+  },
+  {
+   "id": "cnbc_investing",
+   "ok": true,
+   "status": 200,
+   "items": 30,
+   "recent": 3,
+   "secs": 0.4,
+   "link_checks": {
+    "ok": 2
+   }
+  },
+  {
+   "id": "cnbc_tech",
+   "ok": true,
+   "status": 200,
+   "items": 30,
+   "recent": 24,
+   "secs": 0.3,
+   "link_checks": {
+    "paywalled": 1,
+    "ok": 2
+   }
+  },
+  {
+   "id": "cnbc_smallbiz",
+   "ok": true,
+   "status": 200,
+   "items": 30,
+   "recent": 1,
+   "secs": 0.3,
+   "link_checks": {}
+  },
+  {
+   "id": "mw_top",
+   "ok": true,
+   "status": 200,
+   "items": 10,
+   "recent": 10,
+   "secs": 0.2,
+   "link_checks": {
+    "broken": 3
+   }
+  },
+  {
+   "id": "mw_pulse",
+   "ok": true,
+   "status": 200,
+   "items": 30,
+   "recent": 0,
+   "secs": 0.1,
+   "link_checks": {}
+  },
+  {
+   "id": "aljazeera",
+   "ok": true,
+   "status": 200,
+   "items": 25,
+   "recent": 25,
+   "secs": 0.2,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "cbc_top",
+   "ok": true,
+   "status": 200,
+   "items": 20,
+   "recent": 18,
+   "secs": 0.3,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "cbc_business",
+   "ok": true,
+   "status": 200,
+   "items": 20,
+   "recent": 9,
+   "secs": 0.3,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "cbc_canada",
+   "ok": true,
+   "status": 200,
+   "items": 20,
+   "recent": 20,
+   "secs": 0.3,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "cbc_politics",
+   "ok": true,
+   "status": 200,
+   "items": 20,
+   "recent": 9,
+   "secs": 0.3,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "cbc_montreal",
+   "ok": true,
+   "status": 200,
+   "items": 20,
+   "recent": 16,
+   "secs": 0.3,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "cbc_toronto",
+   "ok": true,
+   "status": 200,
+   "items": 20,
+   "recent": 15,
+   "secs": 0.2,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "cbc_tech",
+   "ok": true,
+   "status": 200,
+   "items": 19,
+   "recent": 1,
+   "secs": 0.3,
+   "link_checks": {
+    "ok": 1
+   }
+  },
+  {
+   "id": "cbc_world",
+   "ok": true,
+   "status": 200,
+   "items": 19,
+   "recent": 19,
+   "secs": 0.2,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "global_money",
+   "ok": true,
+   "status": 200,
+   "items": 10,
+   "recent": 4,
+   "secs": 0.2,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "global_toronto",
+   "ok": true,
+   "status": 200,
+   "items": 10,
+   "recent": 10,
+   "secs": 0.2,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "global_montreal",
+   "ok": true,
+   "status": 200,
+   "items": 10,
+   "recent": 5,
+   "secs": 0.2,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "fp",
+   "ok": true,
+   "status": 200,
+   "items": 0,
+   "recent": 0,
+   "secs": 0.2,
+   "link_checks": {}
+  },
+  {
+   "id": "globe_business",
+   "ok": true,
+   "status": 200,
+   "items": 100,
+   "recent": 45,
+   "secs": 0.4,
+   "link_checks": {
+    "paywalled": 3
+   }
+  },
+  {
+   "id": "bnn",
+   "ok": true,
+   "status": 200,
+   "items": 60,
+   "recent": 38,
+   "secs": 0.3,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "rc_economie",
+   "ok": true,
+   "status": 200,
+   "items": 0,
+   "recent": 0,
+   "secs": 0.5,
+   "link_checks": {}
+  },
+  {
+   "id": "rc_une",
+   "ok": true,
+   "status": 200,
+   "items": 28,
+   "recent": 27,
+   "secs": 0.3,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "lapresse_affaires",
+   "ok": true,
+   "status": 200,
+   "items": 10,
+   "recent": 10,
+   "secs": 0.4,
+   "link_checks": {
+    "broken": 3
+   }
+  },
+  {
+   "id": "lapresse_actualites",
+   "ok": true,
+   "status": 200,
+   "items": 10,
+   "recent": 10,
+   "secs": 0.3,
+   "link_checks": {
+    "broken": 3
+   }
+  },
+  {
+   "id": "betakit",
+   "ok": true,
+   "status": 200,
+   "items": 150,
+   "recent": 9,
+   "secs": 0.5,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "national",
+   "ok": true,
+   "status": 200,
+   "items": 100,
+   "recent": 96,
+   "secs": 0.4,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "national_business",
+   "ok": true,
+   "status": 200,
+   "items": 23,
+   "recent": 13,
+   "secs": 0.3,
+   "link_checks": {}
+  },
+  {
+   "id": "gulfnews_business",
+   "ok": false,
+   "status": 404,
+   "items": 0,
+   "secs": 0.4,
+   "link_checks": {}
+  },
+  {
+   "id": "khaleej",
+   "ok": false,
+   "status": 404,
+   "items": 0,
+   "secs": 0.3,
+   "link_checks": {}
+  },
+  {
+   "id": "arabianbusiness",
+   "ok": false,
+   "status": 405,
+   "items": 0,
+   "secs": 0.2,
+   "link_checks": {}
+  },
+  {
+   "id": "techcrunch",
+   "ok": true,
+   "status": 200,
+   "items": 20,
+   "recent": 20,
+   "secs": 0.1,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "verge",
+   "ok": true,
+   "status": 200,
+   "items": 10,
+   "recent": 10,
+   "secs": 0.1,
+   "link_checks": {
+    "paywalled": 3
+   }
+  },
+  {
+   "id": "ars",
+   "ok": true,
+   "status": 200,
+   "items": 20,
+   "recent": 12,
+   "secs": 0.2,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "venturebeat",
+   "ok": false,
+   "status": 429,
+   "items": 0,
+   "secs": 0.2,
+   "link_checks": {}
+  },
+  {
+   "id": "mittr",
+   "ok": true,
+   "status": 200,
+   "items": 10,
+   "recent": 7,
+   "secs": 0.1,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "bleeping",
+   "ok": true,
+   "status": 200,
+   "items": 15,
+   "recent": 15,
+   "secs": 0.2,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "sel",
+   "ok": false,
+   "status": 403,
+   "items": 0,
+   "secs": 0.1,
+   "link_checks": {}
+  },
+  {
+   "id": "marketingdive",
+   "ok": true,
+   "status": 200,
+   "items": 10,
+   "recent": 3,
+   "secs": 0.2,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "smt",
+   "ok": true,
+   "status": 200,
+   "items": 10,
+   "recent": 5,
+   "secs": 0.2,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "boc",
+   "ok": true,
+   "status": 200,
+   "items": 10,
+   "recent": 0,
+   "secs": 0.2,
+   "link_checks": {}
+  },
+  {
+   "id": "boc_all",
+   "ok": true,
+   "status": 200,
+   "items": 10,
+   "recent": 10,
+   "secs": 0.2,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "statcan",
+   "ok": true,
+   "status": 200,
+   "items": 0,
+   "recent": 0,
+   "secs": 0.7,
+   "link_checks": {}
+  },
+  {
+   "id": "fed",
+   "ok": true,
+   "status": 200,
+   "items": 20,
+   "recent": 1,
+   "secs": 0.1,
+   "link_checks": {
+    "ok": 1
+   }
+  },
+  {
+   "id": "bls",
+   "ok": false,
+   "status": 403,
+   "items": 0,
+   "secs": 0.2,
+   "link_checks": {}
+  },
+  {
+   "id": "imf",
+   "ok": false,
+   "status": 403,
+   "items": 0,
+   "secs": 0.2,
+   "link_checks": {}
+  },
+  {
+   "id": "worldbank",
+   "ok": false,
+   "status": 404,
+   "items": 0,
+   "secs": 0.2,
+   "link_checks": {}
+  },
+  {
+   "id": "oecd",
+   "ok": false,
+   "status": 403,
+   "items": 0,
+   "secs": 0.1,
+   "link_checks": {}
+  },
+  {
+   "id": "ontario_news",
+   "ok": true,
+   "status": 200,
+   "items": 15,
+   "recent": 5,
+   "secs": 0.2,
+   "link_checks": {
+    "ok": 3
+   }
+  },
+  {
+   "id": "quebec_news",
+   "ok": false,
+   "status": 202,
+   "items": 0,
+   "secs": 0.1,
+   "link_checks": {}
+  },
+  {
+   "id": "fin_canada",
+   "ok": true,
+   "status": 200,
+   "items": 30,
+   "recent": 5,
+   "secs": 0.4,
+   "link_checks": {
+    "broken": 3
+   }
+  },
+  {
+   "id": "dubai_media",
+   "ok": true,
+   "status": 200,
+   "items": 0,
+   "recent": 0,
+   "secs": 2.6,
+   "link_checks": {}
+  },
+  {
+   "id": "gdelt:(domain:reuters.com OR domain:apnews.com",
+   "ok": false,
+   "status": 429,
+   "items": 0,
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com for larger queries. All high-traffic us",
+   "link_checks": {}
+  },
+  {
+   "id": "gdelt:(domain:reuters.com OR domain:apnews.com",
+   "ok": false,
+   "status": 429,
+   "items": 0,
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com for larger queries. All high-traffic us",
+   "link_checks": {}
+  },
+  {
+   "id": "gdelt:(domain:reuters.com OR domain:apnews.com",
+   "ok": true,
+   "status": 200,
+   "items": 1,
+   "note": "",
+   "link_checks": {}
+  },
+  {
+   "id": "gdelt:(domain:reuters.com OR domain:apnews.com",
+   "ok": false,
+   "status": 429,
+   "items": 0,
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com for larger queries. All high-traffic us",
+   "link_checks": {}
+  },
+  {
+   "id": "gdelt:(domain:reuters.com OR domain:apnews.com",
+   "ok": false,
+   "status": 429,
+   "items": 0,
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com for larger queries. All high-traffic us",
+   "link_checks": {}
+  },
+  {
+   "id": "gdelt:(domain:reuters.com OR domain:apnews.com",
+   "ok": true,
+   "status": 200,
+   "items": 1,
+   "note": "",
+   "link_checks": {}
+  },
+  {
+   "id": "gdelt:(domain:reuters.com OR domain:apnews.com",
+   "ok": false,
+   "status": 429,
+   "items": 0,
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com for larger queries. All high-traffic us",
+   "link_checks": {}
+  },
+  {
+   "id": "gdelt:(domain:reuters.com OR domain:apnews.com",
+   "ok": false,
+   "status": 429,
+   "items": 0,
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com for larger queries. All high-traffic us",
+   "link_checks": {}
+  },
+  {
+   "id": "gdelt:domain:bnnbloomberg.ca",
+   "ok": false,
+   "status": 429,
+   "items": 0,
+   "note": "Please limit requests to one every 5 seconds or contact kalev.leetaru5@gmail.com for larger queries. All high-traffic us",
+   "link_checks": {}
+  },
+  {
+   "id": "gdelt:(domain:ctvnews.ca OR domain:globalnews.",
+   "ok": true,
+   "status": 200,
+   "items": 1,
+   "note": "",
+   "link_checks": {}
+  },
+  {
+   "id": "gdelt_globalnews.ca",
+   "ok": true,
+   "status": "links",
+   "items": 1,
+   "link_checks": {
+    "ok": 1
+   }
+  }
+ ]
+}
