@@ -163,12 +163,14 @@ def fetch_gdelt(cfg, hours, session=None):
     allowed = set(cfg.get("domains", []))
     arts, health = [], []
     for i, q in enumerate(cfg.get("queries", [])):
-        if i:
-            time.sleep(6)
-        params = dict(query=q["q"] + " sourcelang:english", mode="artlist", format="json", maxrecords=150,
-                      timespan=f"{hours}h", sort="hybridrel")
+        params = dict(query=q["q"] + " sourcelang:english", mode="artlist", format="json", maxrecords=200,
+                      timespan=f"{hours}h", sort="datedesc")
         try:
-            r = s.get(GDELT_API, params=params, headers={"User-Agent": UA}, timeout=30)
+            for attempt in range(4):                       # shared cloud IPs often hit GDELT's 1-per-5s limit
+                time.sleep(8 if attempt == 0 else 20 * attempt)
+                r = s.get(GDELT_API, params=params, headers={"User-Agent": UA}, timeout=40)
+                if r.status_code != 429:
+                    break
             data = r.json() if r.status_code == 200 and r.text.strip().startswith("{") else {}
             rows = data.get("articles", [])
             health.append(dict(id=f"gdelt:{q['q'][:40]}", ok=r.status_code == 200 and bool(data), status=r.status_code,

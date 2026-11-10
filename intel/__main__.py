@@ -100,8 +100,9 @@ def probe(s, cache):
     verify_many(sample, s.workers, cache)
     checks = {}
     for a in sample:
-        checks.setdefault(a["source_id"], {}).setdefault(a["check"], 0)
-        checks[a["source_id"]][a["check"]] += 1
+        k = f'{a["check"]}:{a.get("http")}'
+        checks.setdefault(a["source_id"], {}).setdefault(k, 0)
+        checks[a["source_id"]][k] += 1
     for h in health:
         h["link_checks"] = checks.get(h["id"], {})
     for sid, c in checks.items():
