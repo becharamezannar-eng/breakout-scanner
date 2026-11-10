@@ -84,12 +84,15 @@ def test_cluster():
          art("BoC keeps key interest rate at 2.25% as inflation eases further", "Global News"),
          art("Dubai launches new golden visa rules for property investors", "Gulf News", sections=["middle_east"]),
          art("Legault government announces Hydro-Québec investment in Montreal", "La Presse", lang="fr"),
-         art("Nvidia shares jump after record AI chip demand", "CNBC")]
+         art("Nvidia shares jump after record AI chip demand", "CNBC"),
+         art("Toronto's Zach Edey finding footing in NBA with Memphis Grizzlies", "CBC News", sections=["ontario"])]
     cl = C.cluster(a)
     boc = next(c for c in cl if "Bank of Canada" in c["title"] or "BoC" in c["title"])
     check("same story from 3 outlets merged", len(boc["outlets"]) == 3, boc["outlets"])
     check("lead article = best tier (Reuters)", "steady" in boc["title"], boc["title"])
-    check("6 articles -> 4 stories", len(cl) == 4, [c["title"] for c in cl])
+    check("7 articles -> 5 stories", len(cl) == 5, [c["title"] for c in cl])
+    nba = next(c for c in cl if "NBA" in c["title"])
+    check("sports story kept out of Ontario", "ontario" not in nba["sections"], nba["relevance"])
     q = next(c for c in cl if "Legault" in c["title"])
     check("Quebec story routed to Quebec", "quebec" in q["sections"], q["sections"])
     d = next(c for c in cl if "Dubai" in c["title"])

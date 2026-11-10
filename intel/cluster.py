@@ -71,6 +71,15 @@ def cluster(articles):
     return clusters
 
 
+# Sports, entertainment, lifestyle and event notices: kept out of the brief unless they carry a clear economic or
+# policy signal (then other keywords outweigh this).
+NOISE = [" nba ", " nfl ", " nhl ", " mlb ", " mls ", "grizzlies", "raptors", "maple leafs", "canadiens", "blue jays",
+         "olympic", "world cup", "playoff", "touchdown", "coach", "athlete", "marathon", "ultramarathon",
+         "runs 100", "concert", "festival", "album", "movie", "box office", "celebrity", "royal family", "horoscope",
+         "recipe", "art gallery", "museum", "obituary", "dies at", "snowfall", "lottery",
+         "conference on", "webinar", "call for papers", "wedding", "pet ", " zoo"]
+
+
 def _hits(text, keys):
     return sum(1 for k in keys if k in text)
 
@@ -93,13 +102,17 @@ def _finish(c, now=None):
         h = _hits(text, keys) + (2 if s["id"] in feed_secs else 0)
         if h:
             rel[s["id"]] = h
+    noise = _hits(text, NOISE)
+    if noise:                                            # demote, and drop weak section matches entirely
+        rel = {k: v - 2 * noise for k, v in rel.items() if v - 2 * noise >= 2}
+    c["noise"] = noise
     c["relevance"] = rel
     c["sections"] = sorted(rel)
     age_h = (now - c["published"]).total_seconds() / 3600
     best_tier = min(a["tier"] for a in arts)
     c["score"] = round(3.0 * min(len(c["outlets"]), 6) + {1: 4, 2: 2, 3: 1}.get(best_tier, 0)
                        + 1.5 * min(_hits(text, [_fold(k) for k in FOCUS_BOOST]), 4)
-                       - 0.12 * max(age_h - 6, 0), 2)
+                       - 0.12 * max(age_h - 6, 0) - 6 * min(noise, 2), 2)
 
 
 def pick(clusters, section_id, n):
