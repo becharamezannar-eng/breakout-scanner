@@ -209,7 +209,7 @@ def test_pipeline():
     html = R.page(b)
     check("page renders sections, CEO brief, sources", all(x in html for x in ("EXECUTIVE SUMMARY".title(), "CEO Brief",
                                                                               'id="sources"', "S&amp;P 500")), "")
-    check("protected wire links labelled", "site blocks automated checks" in html)
+    check("protected wire links labelled", "blocks automated link checks" in html)
     msgs = R.telegram_messages(b, url="https://x/intel/")
     check("Telegram push split under 4,000 chars", msgs and all(len(m) <= 4000 for m in msgs), [len(m) for m in msgs])
     check("Telegram push has summary + CEO brief + link", "EXECUTIVE SUMMARY" in msgs[0] and
