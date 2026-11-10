@@ -38,7 +38,7 @@ jobs:
         run: docker build -f deploy/Dockerfile -t intel-brief:test .
       - name: Container starts and reports healthy
         run: |
-          docker run -d --name t -e INTEL_SCHEDULE=off intel-brief:test
+          out=$(docker run -d --name t -e INTEL_SCHEDULE=off intel-brief:test 2>&1) || { echo "::error title=docker run::$out"; exit 1; }
           for i in $(seq 1 30); do s=$(docker inspect -f '{{.State.Health.Status}}' t); [ "$s" = healthy ] && break; sleep 5; done
           echo "health: $s"
           docker inspect -f '{{json .State}}' t | cut -c1-900 | sed 's/^/::warning title=state::/'
