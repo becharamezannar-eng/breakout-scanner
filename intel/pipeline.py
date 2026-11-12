@@ -64,19 +64,46 @@ def _dedupe_plan(plan):
     for sid in PRIORITY:
         if sid not in plan:
             continue
-        keep = []
+        keep, local_seen = [], []
         for c in plan[sid]:
             if c["cid"] in used or any(same_story(c["title"], t) for t in shown):
                 continue
+            if sid != "local" and c.get("best") == "local":    # city crime/sports stories belong to the local section
+                continue
+            if sid == "local" and any(same_story(c["title"], t, one_name=True) for t in local_seen):
+                continue
             keep.append(c)
+            local_seen.append(c["title"])
             if len(keep) <= SECTION_BY_ID[sid].get("n", 6):
                 shown.append(c["title"])
             if len(keep) >= POOL:
                 break
+        if sid == "local":
+            keep = _both_cities(keep)
         out[sid] = keep
         used |= {c["cid"] for c in keep[:SECTION_BY_ID[sid].get("n", 6)]}
     for k, v in plan.items():
         out.setdefault(k, v)
+    return out
+
+
+MTL = ["montreal", "montreal", "laval", "longueuil", "spvm", "stm", "canadiens", "habs", "alouettes", "cf montreal",
+       "victoire", "roses", "west island", "plateau", "verdun", "rosemont", "brossard", "rocket"]
+TOR = ["toronto", "gta", "mississauga", "brampton", "scarborough", "etobicoke", "north york", "markham", "vaughan",
+       "ttc", "maple leafs", "leafs", "raptors", "blue jays", "argonauts", "argos", "toronto fc", "tfc", "sceptres",
+       "marlies", "peel", "york region", "durham", "oakville", "pickering", "richmond hill"]
+
+
+def _both_cities(keep):
+    """Alternate Montreal and Toronto stories so both cities are covered."""
+    city = lambda c: ("tor" if any(k in c["text"] for k in TOR) and not any(k in c["text"] for k in MTL[:3]) else "mtl")
+    m = [c for c in keep if city(c) == "mtl"]
+    t = [c for c in keep if city(c) == "tor"]
+    out = []
+    while m or t:
+        for lst in (m, t):
+            if lst:
+                out.append(lst.pop(0))
     return out
 
 
@@ -133,6 +160,8 @@ def _final_dedupe(sections):
         keep = []
         for it in sec.get("items", []):
             if set(it["sources"]) & seen_src or any(same_story(it["headline"], h) for h in seen_head):
+                continue
+            if sid == "local" and any(same_story(it["headline"], k["headline"], one_name=True) for k in keep):
                 continue
             keep.append(it)
             seen_src |= set(it["sources"])

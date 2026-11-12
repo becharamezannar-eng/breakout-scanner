@@ -99,14 +99,20 @@ GENERIC_NAMES = {"white house", "prime minister", "united states", "middle east"
                  "supreme court", "federal government", "stock market", "european union", "united nations"}
 
 
-def same_story(t1, t2):
+CITY_NAMES = {_fold(c.strip().lower()) for c in CITY} | {"quebec", "ontario", "canada", "canadian"}
+
+
+def same_story(t1, t2, one_name=False):
     """Two headlines about the same story: 3+ shared meaningful words, or a shared two-word name
-    ('Jensen Huang', 'CF Montreal', 'Remembrance Day')."""
+    ('Jensen Huang', 'CF Montreal', 'Remembrance Day'). one_name=True (local news: teams and people) also matches a
+    single shared name that isn't a city or team ('Roses', 'Fajardo')."""
     a, b = tokens(t1), tokens(t2)
     if len(a & b) >= 3:
         return True
-    names = {x for x in _features(t1) & _features(t2) if " " in x and x not in GENERIC_NAMES}
-    return bool(names)
+    shared = {x for x in _features(t1) & _features(t2) if x not in GENERIC_NAMES}
+    if any(" " in x for x in shared):
+        return True
+    return one_name and any(len(x) >= 4 and x not in CITY_NAMES for x in shared)
 
 
 def _rare_merge(clusters):

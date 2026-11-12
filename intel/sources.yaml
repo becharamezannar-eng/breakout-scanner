@@ -47,8 +47,10 @@ rss:
   - {name: CBC Sports, id: cbc_sports, url: "https://www.cbc.ca/webfeed/rss/rss-sports", tier: 2, sections: [local]}
   - {name: CBC Sports, id: cbc_nhl, url: "https://www.cbc.ca/webfeed/rss/rss-sports-nhl", tier: 2, sections: [local]}
   - {name: Radio-Canada Sports, id: rc_sports, url: "https://ici.radio-canada.ca/rss/771", tier: 2, lang: fr, sections: [local]}
-  - {name: CTV News Montreal, id: ctv_montreal, url: "https://montreal.ctvnews.ca/rss/ctv-news-montreal-1.822366", tier: 2, sections: [quebec, local]}
-  - {name: CTV News Toronto, id: ctv_toronto, url: "https://toronto.ctvnews.ca/rss/ctv-news-toronto-1.822319", tier: 2, sections: [ontario, local]}
+  # removed after probe 2026-11-12 (ctv_montreal): 404
+  # removed after probe 2026-11-12 (ctv_toronto): 404
+  - {name: Global News, id: global_toronto_crime, url: "https://globalnews.ca/tag/toronto-crime/feed/", tier: 2, sections: [local]}
+  - {name: Global News, id: global_sports, url: "https://globalnews.ca/sports/feed/", tier: 2, sections: [local]}
   - {name: BetaKit, id: betakit, url: "https://betakit.com/feed/", tier: 3, sections: [business, ai_technology]}
 
   # --- Middle East / UAE ----------------------------------------------------------------------------

@@ -354,6 +354,11 @@ def test_no_repeats():
                          ("Wall Street rallies as AI stocks rebound", "Wall Street banks cut 2,000 jobs", False),
                          ("Bank of Canada holds key rate", "Canada housing starts fall", False)]:
         check(f"same story? {t1[:30]}... -> {want}", same_story(t1, t2) == want)
+    check("local: same team story in English and French", same_story(
+        "Montreal Roses FC ready for championship showdown against AFC Toronto",
+        "Entre fébrilité et plaisir, les Roses se préparent pour leur première finale", one_name=True))
+    check("local: two different Toronto stories kept", not same_story(
+        "Toronto police arrest two after downtown shooting", "Raptors beat Celtics in Toronto", one_name=True))
     # headline shown = the article actually linked (an op-ed title must never front another article's link)
     c = dict(title="Op-ed: Nvidia scandal", show=[dict(title="Nvidia's China problem", aid="A1", tier=2, lang="en",
                                                       summary="s")])
