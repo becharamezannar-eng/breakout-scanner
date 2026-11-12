@@ -173,6 +173,24 @@ def _fake_world(monkey_ai=True):
         ("G7 leaders agree on new sanctions package at summit", ["geopolitics"]),
         ("IMF raises global growth forecast, warns on tariffs", ["global_economy"]),
     ]
+    titles += [("Canadian banks raise mortgage rates for fixed-term borrowers", ["canada"]),
+               ("Montreal startup scene draws record venture funding in Quebec", ["quebec"]),
+               ("Ontario expands nuclear power plans at Darlington station", ["ontario"]),
+               ("US retail sales beat forecasts in October as shoppers spend", ["united_states"]),
+               ("Abu Dhabi sovereign fund boosts private credit bets", ["middle_east"]),
+               ("Gold slips as dollar firms ahead of inflation data", ["financial_markets"]),
+               ("Cybersecurity firms warn of new ransomware wave hitting hospitals", ["ai_technology"]),
+               ("Pension funds shift allocations toward infrastructure assets", ["wealth"]),
+               ("Franchise owners report labour shortage easing in service sector", ["business"]),
+               ("Election results reshape coalition talks in Germany", ["geopolitics"]),
+               ("OECD trims trade outlook as shipping costs climb", ["global_economy"]),
+               ("Canada housing starts fall as builders cite high costs", ["canada"]),
+               ("Quebec labour market adds jobs in construction and health", ["quebec"]),
+               ("Ontario budget update projects smaller deficit", ["ontario"]),
+               ("Saudi Arabia announces new tourism investment zone", ["middle_east"]),
+               ("Cloud software spending climbs as companies adopt automation", ["ai_technology"]),
+               ("Wealth managers see demand for dividend ETFs from retirees", ["wealth"]),
+               ("Digital marketing agencies report demand for video ads", ["business"])]
     arts = []
     for i, (t, secs) in enumerate(titles):
         arts.append(art(t, "CBC News", sections=secs, url=f"https://www.cbc.ca/news/story-{i}"))
@@ -296,6 +314,39 @@ def test_gate():
         check(f"{n}: cache round trip", c.get_json("k") == {"a": 1})
 
 
+def test_no_repeats():
+    """Regression (Nov 11): 23 of 82 items repeated a story already shown in another section."""
+    arts = [art("Quebec won't bail out CF Montreal, premier says, after owner puts club up for sale", "CBC News",
+                sections=["quebec"]),
+            art("Québec ne ferme pas la porte à une participation publique pour sauver le CF Montréal", "La Presse",
+                lang="fr", sections=["quebec"]),
+            art("Sans CF Montréal, la Première ligue canadienne doit viser Québec, selon Rocco Placentino", "Radio-Canada",
+                lang="fr", sections=["quebec"])]
+    cl = C.cluster(arts)
+    check("same story in French and English merged", len(cl) <= 2, [c["title"] for c in cl])
+    _fake_world()
+    s2 = Settings()
+    s2.anthropic_key, s2.openai_key = "", ""
+    from .cache import MemoryCache
+    for name, st in (("headlines", s2), ("AI", _ai_settings())):
+        b = PL.build_brief(st, MemoryCache())
+        heads, srcs = [], []
+        for sid, sec in b["sections"].items():
+            if sid == "watchlist":
+                continue
+            for it in sec["items"]:
+                heads.append(it["headline"])
+                srcs += it["sources"]
+        check(f"{name} brief: no headline shown twice", len(heads) == len(set(heads)),
+              [h for h in heads if heads.count(h) > 1][:3])
+        check(f"{name} brief: no article used by two items", len(srcs) == len(set(srcs)))
+    # headline shown = the article actually linked (an op-ed title must never front another article's link)
+    c = dict(title="Op-ed: Nvidia scandal", show=[dict(title="Nvidia's China problem", aid="A1", tier=2, lang="en",
+                                                      summary="s")])
+    it = PL._headline_items([c], 1)[0]
+    check("headline comes from the linked article", it["headline"] == "Nvidia's China problem" and it["sources"] == ["A1"])
+
+
 def main():
     test_feeds()
     test_cluster()
@@ -303,5 +354,6 @@ def main():
     b = test_pipeline()
     test_store(b)
     test_gate()
+    test_no_repeats()
     print("INTEL SELFTEST", "PASSED" if OK else "FAILED")
     return 0 if OK else 1

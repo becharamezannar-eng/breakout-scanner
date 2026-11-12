@@ -27,21 +27,47 @@ def now_et():
 
 
 def _assign(clusters):
-    """Stories per section, each story in at most two sections, before verification."""
-    used, plan = {}, {}
+    """Stories per section before verification. Each story belongs to ONE place in the brief: the Executive Summary
+    takes the biggest stories; every other story goes to the section it fits best (spares kept for failed links)."""
+    plan = {"executive_summary": top_overall(clusters, 36)}
+    best = {}
+    for c in clusters:
+        if c["relevance"]:
+            best[c["cid"]] = max(c["relevance"], key=lambda k: (c["relevance"][k], -PRIORITY.index(k)
+                                                                if k in PRIORITY else -99))
+    for c in clusters:
+        c["best"] = best.get(c["cid"])
     for sid in PRIORITY:
-        chosen = []
-        for c in pick(clusters, sid, POOL * 3):
-            if used.get(c["cid"], 0) >= 2:
-                continue
-            chosen.append(c)
-            if len(chosen) >= POOL + 6:          # a few spares in case links fail verification
-                break
-        plan[sid] = chosen
-        for c in chosen[:POOL]:
-            used[c["cid"]] = used.get(c["cid"], 0) + 1
-    plan["executive_summary"] = top_overall(clusters, 36)
+        own = [c for c in pick(clusters, sid, POOL * 4) if best.get(c["cid"]) == sid]
+        rest = [c for c in pick(clusters, sid, POOL * 4) if best.get(c["cid"]) != sid]
+        plan[sid] = (own + rest)[:POOL + 10]      # final de-duplication happens after verification
     return plan
+
+
+def _dedupe_plan(plan):
+    """After verification: a story appears in only one section. Executive Summary first, then each section keeps the
+    stories that fit it best, then fills with leftovers that no earlier section used."""
+    used = set()
+    out = {}
+    n = SECTION_BY_ID["executive_summary"].get("n", 10)
+    exec_, per = [], {}
+    for c in plan.get("executive_summary", []):          # a varied summary: at most 2 stories from any one section,
+        k = c.get("best")                                 # so the sections below keep their own top stories
+        if per.get(k, 0) >= 2:
+            continue
+        per[k] = per.get(k, 0) + 1
+        exec_.append(c)
+    out["executive_summary"] = exec_[:n + 4]
+    used |= {c["cid"] for c in exec_[:n]}
+    for sid in PRIORITY:
+        if sid not in plan:
+            continue
+        keep = [c for c in plan[sid] if c["cid"] not in used][:POOL]
+        out[sid] = keep
+        used |= {c["cid"] for c in keep[:SECTION_BY_ID[sid].get("n", 6)]}
+    for k, v in plan.items():
+        out.setdefault(k, v)
+    return out
 
 
 def _verify_clusters(plan, settings, cache):
@@ -66,7 +92,7 @@ def _verify_clusters(plan, settings, cache):
         for a in c["show"]:
             a["aid"] = "A" + a["id"]
     for sid in plan:
-        plan[sid] = [c for c in plan[sid] if c.get("show")][:POOL if sid != "executive_summary" else 30]
+        plan[sid] = [c for c in plan[sid] if c.get("show")][:POOL + 10 if sid != "executive_summary" else 30]
     stats = {}
     for a in todo:
         stats[a.get("check", "unchecked")] = stats.get(a.get("check", "unchecked"), 0) + 1
@@ -86,6 +112,26 @@ def _clean_items(items, allowed, limit):
     return out[:limit]
 
 
+def _final_dedupe(sections):
+    """Last check before publishing: no item may repeat a story already shown higher up the brief
+    (same article, or a headline that says the same thing). The watchlist may point back to earlier stories."""
+    from .cluster import tokens, _similar
+    seen_src, seen_tok = set(), []
+    for sid, sec in sections.items():
+        if sid == "watchlist":
+            continue
+        keep = []
+        for it in sec.get("items", []):
+            tk = tokens(it["headline"])
+            if set(it["sources"]) & seen_src or any(_similar(tk, t) for t in seen_tok):
+                continue
+            keep.append(it)
+            seen_src |= set(it["sources"])
+            seen_tok.append(tk)
+        sec["items"] = keep
+    return sections
+
+
 def _compact(sections):
     """Today's items as text for the watchlist / CEO calls."""
     lines = []
@@ -101,10 +147,10 @@ def _headline_items(clusters, limit):
     """No AI key: the most important verified stories with their own descriptions, clearly labelled."""
     items = []
     for c in clusters[:limit]:
-        lead = c["show"][0]
-        items.append(dict({k: "" for k in ITEM_FIELDS}, headline=c["title"],
+        lead = min(c["show"], key=lambda a: (a.get("lang") != "en", a["tier"]))
+        items.append(dict({k: "" for k in ITEM_FIELDS}, headline=lead["title"],
                           summary=(lead.get("summary") or lead.get("excerpt") or "")[:320], themes=[],
-                          sources=[a["aid"] for a in c["show"][:3]]))
+                          sources=[lead["aid"]] + [a["aid"] for a in c["show"] if a is not lead][:2]))
     return items
 
 
@@ -119,6 +165,7 @@ def build_brief(settings, cache, only=None, store=None):
     if only:
         plan = {k: v for k, v in plan.items() if k in only}
     vstats = _verify_clusters(plan, settings, cache)
+    plan = _dedupe_plan(plan)
     snap = snapshot()
     mtext = as_text(snap)
     ai = settings.ai_enabled
@@ -182,7 +229,7 @@ def build_brief(settings, cache, only=None, store=None):
                 if a["aid"] in used:
                     amap[a["aid"]] = dict(title=a["title"], source=a["source"], url=a.get("final_url") or a["url"],
                                           published=a["published"].isoformat(), check=a["check"])
-    ordered = {s["id"]: sections[s["id"]] for s in SECTIONS if s["id"] in sections}
+    ordered = _final_dedupe({s["id"]: sections[s["id"]] for s in SECTIONS if s["id"] in sections})
     brief = dict(kind="daily", date=when.date().isoformat(), generated_at=when.isoformat(timespec="minutes"),
                  title="Global Intelligence & Wealth Brief", date_label=date_str, mode="ai" if ai else "headlines",
                  market=snap, sections=ordered, ceo=ceo, articles=amap, errors=errors,

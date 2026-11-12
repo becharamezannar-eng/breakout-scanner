@@ -66,6 +66,7 @@ def cluster(articles):
                 c["tokens"] |= tk
                 for t in new:
                     index.setdefault(t, []).append(best)
+    clusters = _rare_merge(clusters)
     for c in clusters:
         _finish(c)
     return clusters
@@ -78,6 +79,69 @@ NOISE = [" nba ", " nfl ", " nhl ", " mlb ", " mls ", "grizzlies", "raptors", "m
          "runs 100", "concert", "festival", "album", "movie", "box office", "celebrity", "royal family", "horoscope",
          "recipe", "art gallery", "museum", "obituary", "dies at", "snowfall", "lottery",
          "conference on", "webinar", "call for papers", "wedding", "pet ", " zoo"]
+
+
+def _features(title):
+    """Names in a headline (capitalized words and pairs like 'CF Montreal', 'Jensen Huang'): they survive rewording
+    and translation, while ordinary words ('interest rate') are left out so different stories don't merge."""
+    words = []
+    for raw in re.findall(r"[A-Za-zÀ-ÿ0-9&$%.'’-]+", title):
+        w = _fold(raw.lower()).strip(".'’-")
+        name = raw[:1].isupper() and not (title.istitle() or title.isupper())
+        if w in STOP or w.isdigit() or not (len(w) >= 3 or (len(raw) >= 2 and raw.isupper())):
+            words.append(None)
+            continue
+        words.append(w if name else None)
+    feats = {w for w in words if w}
+    feats |= {f"{a} {b}" for a, b in zip(words, words[1:]) if a and b}
+    return feats
+
+
+def _rare_merge(clusters):
+    """Second pass: merge clusters whose titles share 2+ distinctive words (names, places, companies) that are rare
+    across today's news - catches the same story worded differently or in French and English."""
+    feats = [set().union(*(_features(a["title"]) for a in c["articles"][:4])) for c in clusters]
+    df = {}
+    for f in feats:
+        for t in f:
+            df[t] = df.get(t, 0) + 1
+    n = len(clusters)
+    limit = max(3, n // 150)
+    rare = [{t for t in f if df[t] <= limit} for f in feats]
+    parent = list(range(n))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    index = {}
+    for i, r in enumerate(rare):
+        for t in r:
+            index.setdefault(t, []).append(i)
+    for i, r in enumerate(rare):
+        seen = {}
+        for t in r:
+            for j in index[t]:
+                if j < i:
+                    seen[j] = seen.get(j, 0) + 1
+        seen = {j: k for j, k in seen.items()}
+        for j, k in seen.items():
+            if k >= 2 and any(" " in t for t in rare[i] & rare[j]):     # needs a shared two-word name
+                parent[find(i)] = find(j)
+    groups = {}
+    for i in range(n):
+        groups.setdefault(find(i), []).append(clusters[i])
+    out = []
+    for g in groups.values():
+        base = g[0]
+        for other in g[1:]:
+            base["articles"] += other["articles"]
+            base["tokens"] |= other["tokens"]
+        out.append(base)
+    for i, c in enumerate(out):
+        c["cid"] = i
+    return out
 
 
 def _hits(text, keys):
