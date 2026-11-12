@@ -78,7 +78,8 @@ NOISE = [" nba ", " nfl ", " nhl ", " mlb ", " mls ", "grizzlies", "raptors", "m
          "olympic", "world cup", "playoff", "touchdown", "coach", "athlete", "marathon", "ultramarathon",
          "runs 100", "concert", "festival", "album", "movie", "box office", "celebrity", "royal family", "horoscope",
          "recipe", "art gallery", "museum", "obituary", "dies at", "snowfall", "lottery",
-         "conference on", "webinar", "call for papers", "wedding", "pet ", " zoo"]
+         "conference on", "webinar", "call for papers", "wedding", "pet ", " zoo", "murder", "stabbing",
+         "stealing", "charged with", "hockey player", "f1 champion", "formula 1", "palmares"]
 
 
 def _features(title):
@@ -95,6 +96,20 @@ def _features(title):
     feats = {w for w in words if w}
     feats |= {f"{a} {b}" for a, b in zip(words, words[1:]) if a and b}
     return feats
+
+
+GENERIC_NAMES = {"white house", "prime minister", "united states", "middle east", "new york", "wall street",
+                 "supreme court", "federal government", "stock market", "european union", "united nations"}
+
+
+def same_story(t1, t2):
+    """Two headlines about the same story: 3+ shared meaningful words, or a shared two-word name
+    ('Jensen Huang', 'CF Montreal', 'Remembrance Day')."""
+    a, b = tokens(t1), tokens(t2)
+    if len(a & b) >= 3:
+        return True
+    names = {x for x in _features(t1) & _features(t2) if " " in x and x not in GENERIC_NAMES}
+    return bool(names)
 
 
 def _rare_merge(clusters):

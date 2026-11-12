@@ -59,10 +59,20 @@ def _dedupe_plan(plan):
         exec_.append(c)
     out["executive_summary"] = exec_[:n + 4]
     used |= {c["cid"] for c in exec_[:n]}
+    from .cluster import same_story
+    shown = [c["title"] for c in exec_[:n]]
     for sid in PRIORITY:
         if sid not in plan:
             continue
-        keep = [c for c in plan[sid] if c["cid"] not in used][:POOL]
+        keep = []
+        for c in plan[sid]:
+            if c["cid"] in used or any(same_story(c["title"], t) for t in shown):
+                continue
+            keep.append(c)
+            if len(keep) <= SECTION_BY_ID[sid].get("n", 6):
+                shown.append(c["title"])
+            if len(keep) >= POOL:
+                break
         out[sid] = keep
         used |= {c["cid"] for c in keep[:SECTION_BY_ID[sid].get("n", 6)]}
     for k, v in plan.items():
@@ -115,19 +125,18 @@ def _clean_items(items, allowed, limit):
 def _final_dedupe(sections):
     """Last check before publishing: no item may repeat a story already shown higher up the brief
     (same article, or a headline that says the same thing). The watchlist may point back to earlier stories."""
-    from .cluster import tokens, _similar
-    seen_src, seen_tok = set(), []
+    from .cluster import same_story
+    seen_src, seen_head = set(), []
     for sid, sec in sections.items():
         if sid == "watchlist":
             continue
         keep = []
         for it in sec.get("items", []):
-            tk = tokens(it["headline"])
-            if set(it["sources"]) & seen_src or any(_similar(tk, t) for t in seen_tok):
+            if set(it["sources"]) & seen_src or any(same_story(it["headline"], h) for h in seen_head):
                 continue
             keep.append(it)
             seen_src |= set(it["sources"])
-            seen_tok.append(tk)
+            seen_head.append(it["headline"])
         sec["items"] = keep
     return sections
 

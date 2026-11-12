@@ -340,6 +340,12 @@ def test_no_repeats():
         check(f"{name} brief: no headline shown twice", len(heads) == len(set(heads)),
               [h for h in heads if heads.count(h) > 1][:3])
         check(f"{name} brief: no article used by two items", len(srcs) == len(set(srcs)))
+    from .cluster import same_story
+    for t1, t2, want in [("Nvidia prepares to oust Jensen Huang, WSJ reports", "The unfolding Jensen Huang scandal: a timeline", True),
+                         ("Bank of Canada moving carefully, but more hikes might be needed", "Further interest rate hikes might be needed: Bank of Canada", True),
+                         ("Wall Street rallies as AI stocks rebound", "Wall Street banks cut 2,000 jobs", False),
+                         ("Bank of Canada holds key rate", "Canada housing starts fall", False)]:
+        check(f"same story? {t1[:30]}... -> {want}", same_story(t1, t2) == want)
     # headline shown = the article actually linked (an op-ed title must never front another article's link)
     c = dict(title="Op-ed: Nvidia scandal", show=[dict(title="Nvidia's China problem", aid="A1", tier=2, lang="en",
                                                       summary="s")])
