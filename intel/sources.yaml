@@ -30,13 +30,13 @@ rss:
   - {name: CBC News, id: cbc_business, url: "https://www.cbc.ca/webfeed/rss/rss-business", tier: 2, sections: [canada, global_economy]}
   - {name: CBC News, id: cbc_canada, url: "https://www.cbc.ca/webfeed/rss/rss-canada", tier: 2, sections: [canada]}
   - {name: CBC News, id: cbc_politics, url: "https://www.cbc.ca/webfeed/rss/rss-politics", tier: 2, sections: [canada]}
-  - {name: CBC News, id: cbc_montreal, url: "https://www.cbc.ca/webfeed/rss/rss-canada-montreal", tier: 2, sections: [quebec]}
-  - {name: CBC News, id: cbc_toronto, url: "https://www.cbc.ca/webfeed/rss/rss-canada-toronto", tier: 2, sections: [ontario]}
+  - {name: CBC News, id: cbc_montreal, url: "https://www.cbc.ca/webfeed/rss/rss-canada-montreal", tier: 2, sections: [quebec, local]}
+  - {name: CBC News, id: cbc_toronto, url: "https://www.cbc.ca/webfeed/rss/rss-canada-toronto", tier: 2, sections: [ontario, local]}
   - {name: CBC News, id: cbc_tech, url: "https://www.cbc.ca/webfeed/rss/rss-technology", tier: 2, sections: [ai_technology]}
   - {name: CBC News, id: cbc_world, url: "https://www.cbc.ca/webfeed/rss/rss-world", tier: 2, sections: [geopolitics]}
   - {name: Global News, id: global_money, url: "https://globalnews.ca/money/feed/", tier: 2, sections: [canada, wealth]}
-  - {name: Global News, id: global_toronto, url: "https://globalnews.ca/toronto/feed/", tier: 2, sections: [ontario]}
-  - {name: Global News, id: global_montreal, url: "https://globalnews.ca/montreal/feed/", tier: 2, sections: [quebec]}
+  - {name: Global News, id: global_toronto, url: "https://globalnews.ca/toronto/feed/", tier: 2, sections: [ontario, local]}
+  - {name: Global News, id: global_montreal, url: "https://globalnews.ca/montreal/feed/", tier: 2, sections: [quebec, local]}
   # removed after probe 2026-11-10 (fp): feed failed or its links failed checks
   - {name: The Globe and Mail, id: globe_business, url: "https://www.theglobeandmail.com/arc/outboundfeeds/rss/category/business/", tier: 2, paywall: check, sections: [canada]}
   - {name: BNN Bloomberg, id: bnn, url: "https://www.bnnbloomberg.ca/arc/outboundfeeds/rss/?outputType=xml", tier: 2, sections: [financial_markets, canada]}
@@ -44,6 +44,11 @@ rss:
   - {name: Radio-Canada, id: rc_une, url: "https://ici.radio-canada.ca/rss/4159", tier: 2, lang: fr, sections: [quebec]}
   - {name: La Presse, id: lapresse_affaires, url: "https://www.lapresse.ca/affaires/rss", tier: 2, lang: fr, sections: [quebec]}
   - {name: La Presse, id: lapresse_actualites, url: "https://www.lapresse.ca/actualites/rss", tier: 2, lang: fr, sections: [quebec]}
+  - {name: CBC Sports, id: cbc_sports, url: "https://www.cbc.ca/webfeed/rss/rss-sports", tier: 2, sections: [local]}
+  - {name: CBC Sports, id: cbc_nhl, url: "https://www.cbc.ca/webfeed/rss/rss-sports-nhl", tier: 2, sections: [local]}
+  - {name: Radio-Canada Sports, id: rc_sports, url: "https://ici.radio-canada.ca/rss/771", tier: 2, lang: fr, sections: [local]}
+  - {name: CTV News Montreal, id: ctv_montreal, url: "https://montreal.ctvnews.ca/rss/ctv-news-montreal-1.822366", tier: 2, sections: [quebec, local]}
+  - {name: CTV News Toronto, id: ctv_toronto, url: "https://toronto.ctvnews.ca/rss/ctv-news-toronto-1.822319", tier: 2, sections: [ontario, local]}
   - {name: BetaKit, id: betakit, url: "https://betakit.com/feed/", tier: 3, sections: [business, ai_technology]}
 
   # --- Middle East / UAE ----------------------------------------------------------------------------

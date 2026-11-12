@@ -18,7 +18,8 @@ HELP = """<b>Global Intelligence &amp; Wealth Brief</b>
 /geopolitics - geopolitical briefing
 /business - business opportunities
 /wealth - wealth management briefing
-/canada - Canada, Quebec and Ontario
+/canada - Canada, Quebec, Ontario and Montreal/Toronto local
+/local - Montreal &amp; Toronto: crime, local news and sports
 /technology - AI and technology
 /watchlist - opportunities and risks
 /weekly - weekly intelligence summary
@@ -89,7 +90,7 @@ class Bot:
             dict(command=c, description=d) for c, d in [
                 ("brief", "Today's complete briefing"), ("markets", "Markets and investments"),
                 ("geopolitics", "Geopolitics"), ("business", "Business opportunities"), ("wealth", "Wealth management"),
-                ("canada", "Canada, Quebec, Ontario"), ("technology", "AI and technology"),
+                ("canada", "Canada, Quebec, Ontario"), ("local", "Montreal & Toronto local, crime, sports"), ("technology", "AI and technology"),
                 ("watchlist", "Risks and opportunities"), ("weekly", "Weekly summary"), ("search", "Search the archive"),
                 ("trends", "Rising themes"), ("status", "System health"), ("help", "All commands")]])
         log.info("bot started")

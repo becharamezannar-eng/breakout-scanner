@@ -17,7 +17,7 @@ log = logging.getLogger("intel.pipeline")
 ITEM_FIELDS = ["headline", "summary", "why_it_matters", "economic_impact", "market_impact", "investment_implications",
                "opportunities", "risks", "tag", "themes", "sources"]
 # Section priority: a story is used by at most two sections, higher priority first
-PRIORITY = ["canada", "quebec", "ontario", "financial_markets", "global_economy", "united_states", "middle_east",
+PRIORITY = ["canada", "quebec", "ontario", "local", "financial_markets", "global_economy", "united_states", "middle_east",
             "geopolitics", "ai_technology", "wealth", "business"]
 POOL = 14            # stories offered to the AI per section
 

@@ -3,7 +3,7 @@ import datetime as dt
 import re
 import unicodedata
 
-from .config import SECTIONS, FOCUS_BOOST
+from .config import SECTIONS, FOCUS_BOOST, CITY, LOCAL_TOPICS
 
 STOP = set("""a an the and or but of to in on for at by with from as is are was were be been being has have had it its
 this that these those after before over under into about amid says said say new more most than up down out off not no
@@ -72,14 +72,11 @@ def cluster(articles):
     return clusters
 
 
-# Sports, entertainment, lifestyle and event notices: kept out of the brief unless they carry a clear economic or
-# policy signal (then other keywords outweigh this).
-NOISE = [" nba ", " nfl ", " nhl ", " mlb ", " mls ", "grizzlies", "raptors", "maple leafs", "canadiens", "blue jays",
-         "olympic", "world cup", "playoff", "touchdown", "coach", "athlete", "marathon", "ultramarathon",
-         "runs 100", "concert", "festival", "album", "movie", "box office", "celebrity", "royal family", "horoscope",
-         "recipe", "art gallery", "museum", "obituary", "dies at", "snowfall", "lottery",
-         "conference on", "webinar", "call for papers", "wedding", "pet ", " zoo", "murder", "stabbing",
-         "stealing", "charged with", "hockey player", "f1 champion", "formula 1", "palmares"]
+# Entertainment, lifestyle and event notices: kept out of the brief. (Crime and sports are NOT noise: Montreal and
+# Toronto stories go to the local section; elsewhere they are only kept out of the economic sections.)
+NOISE = ["concert", "festival", "album", "movie", "box office", "celebrity", "royal family", "horoscope",
+         "recipe", "art gallery", "museum", "obituary", "lottery", "conference on", "webinar", "call for papers",
+         "wedding", "pet ", " zoo", "palmares"]
 
 
 def _features(title):
@@ -182,8 +179,17 @@ def _finish(c, now=None):
         if h:
             rel[s["id"]] = h
     noise = _hits(text, NOISE)
-    if noise:                                            # demote, and drop weak section matches entirely
-        rel = {k: v - 2 * noise for k, v in rel.items() if v - 2 * noise >= 2}
+    local_topic = _hits(text, [_fold(k) for k in LOCAL_TOPICS])
+    city = _hits(text, [_fold(k) for k in CITY])
+    damp = 2 * noise + min(local_topic, 3)               # crime/sports stay out of the economic sections...
+    if damp:
+        rel = {k: v - damp for k, v in rel.items() if v - damp >= 2}
+    if city and (local_topic or "local" in feed_secs):    # ...and go to Montreal & Toronto local news
+        rel["local"] = 2 + min(local_topic, 4) + min(city, 3) + (2 if "local" in feed_secs else 0)
+        if local_topic:                                   # a city crime/sports story belongs to local, not the
+            for k in ("quebec", "ontario", "canada"):     # provincial or national economic sections
+                if k in rel and rel[k] <= rel["local"]:
+                    del rel[k]
     c["noise"] = noise
     c["relevance"] = rel
     c["sections"] = sorted(rel)
@@ -191,7 +197,7 @@ def _finish(c, now=None):
     best_tier = min(a["tier"] for a in arts)
     c["score"] = round(3.0 * min(len(c["outlets"]), 6) + {1: 4, 2: 2, 3: 1}.get(best_tier, 0)
                        + 1.5 * min(_hits(text, [_fold(k) for k in FOCUS_BOOST]), 4)
-                       - 0.12 * max(age_h - 6, 0) - 6 * min(noise, 2), 2)
+                       - 0.12 * max(age_h - 6, 0) - 6 * min(noise, 2) - 1.5 * min(local_topic, 3), 2)
 
 
 def pick(clusters, section_id, n):

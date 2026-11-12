@@ -93,7 +93,13 @@ def test_cluster():
     check("lead article = best tier (Reuters)", "steady" in boc["title"], boc["title"])
     check("7 articles -> 5 stories", len(cl) == 5, [c["title"] for c in cl])
     nba = next(c for c in cl if "NBA" in c["title"])
-    check("sports story kept out of Ontario", "ontario" not in nba["sections"], nba["relevance"])
+    check("sports story kept out of Ontario (economic) section", "ontario" not in nba["sections"], nba["relevance"])
+    check("Toronto sports story goes to Montreal & Toronto local", "local" in nba["sections"], nba["relevance"])
+    crime = C.cluster([art("Montreal police arrest suspect after shooting in Saint-Michel", "CBC News", sections=["quebec"]),
+                       art("Man charged after stabbing in Scarborough, Toronto police say", "Global News", sections=["ontario"]),
+                       art("Florida man charged in alligator theft", "CNBC")])
+    loc = [c["title"][:20] for c in crime if "local" in c["sections"]]
+    check("Montreal and Toronto crime -> local; other crime not", len(loc) == 2 and not any("Florida" in t for t in loc), loc)
     q = next(c for c in cl if "Legault" in c["title"])
     check("Quebec story routed to Quebec", "quebec" in q["sections"], q["sections"])
     d = next(c for c in cl if "Dubai" in c["title"])
@@ -190,7 +196,9 @@ def _fake_world(monkey_ai=True):
                ("Saudi Arabia announces new tourism investment zone", ["middle_east"]),
                ("Cloud software spending climbs as companies adopt automation", ["ai_technology"]),
                ("Wealth managers see demand for dividend ETFs from retirees", ["wealth"]),
-               ("Digital marketing agencies report demand for video ads", ["business"])]
+               ("Digital marketing agencies report demand for video ads", ["business"]),
+               ("Canadiens beat Maple Leafs 4-2 at the Bell Centre", ["local"]),
+               ("Toronto police arrest two after downtown shooting", ["local"])]
     arts = []
     for i, (t, secs) in enumerate(titles):
         arts.append(art(t, "CBC News", sections=secs, url=f"https://www.cbc.ca/news/story-{i}"))
@@ -236,7 +244,7 @@ def test_pipeline():
     check("Telegram push split under 4,000 chars", msgs and all(len(m) <= 4000 for m in msgs), [len(m) for m in msgs])
     check("Telegram push has summary + CEO brief + link", "EXECUTIVE SUMMARY" in msgs[0] and
           any("3 RISKS" in m for m in msgs) and "Open the full brief" in msgs[-1])
-    sec_msgs = R.telegram_messages(b, sections=["canada", "quebec", "ontario"])
+    sec_msgs = R.telegram_messages(b, sections=["canada", "quebec", "ontario", "local"])
     check("/canada returns Canada, Quebec, Ontario only", "QUEBEC" in "".join(sec_msgs) and
           "EXECUTIVE" not in "".join(sec_msgs))
     s2 = Settings()

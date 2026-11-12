@@ -101,6 +101,11 @@ SECTIONS = [
         "london, ont", "ottawa city", "gta", "bay street", "tmx group", "metrolinx", "ttc", "ontario place",
         "greenbelt", "ring of fire"],
         ask="what happened, why it matters, economic impact, investment implications, business opportunities"),
+    dict(id="local", title="Montréal & Toronto: Local, Crime & Sports", kind="items", n=8, keys=[], local=True,
+         ask="local news for residents of Montreal and Toronto: crime and police, courts, fires and accidents, transit, "
+             "city hall, weather disruptions, and the city's sports teams (results, trades, standings). For each: what "
+             "happened, where, and why it matters to residents (safety, commute, costs, the team's season). Keep both "
+             "cities represented when the stories allow"),
     dict(id="united_states", title="United States", kind="items", n=7, keys=[
         "federal reserve", "the fed", "fomc", "white house", "congress", "senate", "treasury secretary", "u.s.", "us economy",
         "american", "trump", "washington", "wall street", "irs", "sec ", "jobs report", "nonfarm"],
@@ -138,7 +143,7 @@ FOCUS_BOOST = ["canada", "canadian", "quebec", "québec", "montreal", "montréal
 COMMANDS = {
     "brief": None, "markets": ["financial_markets", "wealth"], "geopolitics": ["geopolitics", "middle_east"],
     "business": ["business", "watchlist"], "wealth": ["wealth", "financial_markets"],
-    "canada": ["canada", "quebec", "ontario"], "technology": ["ai_technology"], "watchlist": ["watchlist", "ceo_brief"],
+    "canada": ["canada", "quebec", "ontario", "local"], "local": ["local"], "technology": ["ai_technology"], "watchlist": ["watchlist", "ceo_brief"],
 }
 
 # Themes the model should prefer when tagging (keeps trends comparable day to day)
@@ -150,3 +155,23 @@ THEMES = [
     "china", "elections", "quebec politics", "ontario politics", "infrastructure", "energy transition", "labour market",
     "immigration", "crypto", "wealth management", "pensions", "m&a",
 ]
+
+# Montreal & Toronto local section: a story qualifies when it names one of these places or teams...
+CITY = ["montreal", "montréal", "laval", "longueuil", "west island", "plateau", "verdun", "rosemont", "brossard",
+        "toronto", "gta", "mississauga", "brampton", "scarborough", "etobicoke", "north york", "markham", "vaughan",
+        "richmond hill", "durham region", "peel region", "york region", "oakville", "pickering",
+        "spvm", "toronto police", "peel police", "york regional police", "stm", "ttc", "metrolinx", "rem ",
+        "canadiens", "habs", "maple leafs", "leafs", "raptors", "blue jays", "cf montréal", "cf montreal", "alouettes",
+        "argonauts", "argos", "toronto fc", "tfc", "victoire", "sceptres", "marlies", "rocket de laval", "laval rocket"]
+# ...and is about one of these (crime, safety, sports, city life). These words keep such stories OUT of the
+# economic sections and IN the local one.
+LOCAL_TOPICS = [
+    "police", "policiers", "arrest", "arrestation", "charged", "accusé", "murder", "meurtre", "homicide", "shooting",
+    "fusillade", "coups de feu", "stabbing", "poignard", "robbery", "vol ", "theft", "stolen", "carjack", "fraud",
+    "fraude", "assault", "agression", "sentenced", "trial", "procès", "court", "tribunal", "crime", "suspect",
+    "missing", "disparu", "fire", "incendie", "crash", "collision", "accident", "pedestrian", "piéton", "evacuat",
+    "snowstorm", "tempête", "power outage", "panne", "transit", "subway", "métro", "bus ", "strike", "grève",
+    "city council", "conseil municipal", "mayor", "mairesse", "maire", "nhl", "lnh", "nba", "mlb", "mls", "cfl", "pwhl",
+    "hockey", "basketball", "baseball", "soccer", "football", "playoff", "séries", "coach", "entraîneur", "trade",
+    "goalie", "gardien", "score", "victory", "victoire", "defeat", "défaite", "game ", "match", "season", "saison",
+    "player", "joueur", "athlete", "olympic", "grey cup", "coupe grey", "stanley cup", "coupe stanley"]
