@@ -33,7 +33,11 @@ using the uploaded trading books and live financial data.
 | Morning check | Mon-Fri ~10:15 am, plus ~11:15 am until Nov 1 | `15 14 * * 1-5`, `15 15 * * 1-5` |
 | Backtest | Saturdays 8:00 am (7:00 am after Nov 1) | `0 12 * * 6` |
 | Global Intelligence & Wealth Brief | Every day, ready by ~6:00 am | `20 9,10,11 * * *` (gated: first run after 5:00 am ET) |
-GitHub often starts scheduled runs 15-45 minutes late. "Scan now" and the search box run on demand.
+Main clock (since 2026-11-16): a Claude scheduled task, "Scanner scheduler: start every run on time", starts each
+run at 5:07 am (brief, daily), 10:07 am (morning check, weekdays), 5:07 pm (evening scan, weekdays) and Saturdays
+(backtest), and re-checks at 12:07 pm and 7:07 pm, restarting anything that failed (phone notification only then).
+Reason: GitHub's own cron started runs 7-10 hours late on Nov 13-16, 2026; the crons in scan.yml stay only as a
+backup (late runs are skipped safely by each script's time checks). "Scan now" and the search box run on demand.
 The schedule stays as is unless Bechara changes it.
 
 Add-ons are modular: they import the core scanner and never change it (see `ARCHITECTURE.md`).
